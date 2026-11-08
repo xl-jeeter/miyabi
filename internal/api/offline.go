@@ -10,6 +10,7 @@ import (
 
 type OfflineManager interface {
 	Add(context.Context, string, string) (domain.OfflineSubmission, error)
+	AddByHash(ctx context.Context, code, hash string) (domain.OfflineSubmission, error)
 	Activity(context.Context) (offline.Activity, error)
 	Cancel(context.Context, int) (domain.OfflineSubmission, error)
 	TryNext(context.Context, int) (domain.OfflineSubmission, error)

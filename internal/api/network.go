@@ -12,6 +12,7 @@ type NetworkManager interface {
 	Config() netx.ProxyConfig
 	UpdateNetwork(context.Context, netx.ProxyConfig) error
 	TestNetwork(context.Context, netx.ProxyConfig) (network.TestResult, error)
+	ProxyManager() *netx.ProxyManager
 }
 
 func networkHandler(network NetworkManager) gin.HandlerFunc {

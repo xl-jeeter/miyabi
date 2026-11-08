@@ -29,6 +29,8 @@ type Dependencies struct {
 	Maintenance    MaintenanceManager
 	Network        NetworkManager
 	Emby           EmbyManager
+	Rankings       RankingsSource
+	Resources      ResourceManager
 	Frontend       fs.FS
 	STRMToken      string
 	TrustedProxies []string
@@ -120,6 +122,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.POST("/discover/viewed", discoverAddViewedHandler(deps.Library))
 	protected.GET("/discover/search", discoverSearchHandler(deps.Catalogue))
 	protected.GET("/discover/tags", discoverTagsHandler(deps.Catalogue))
+	protected.GET("/discover/rankings", discoverRankingsHandler(deps.Rankings))
+
+	resourcesAPI := protected.Group("/avdb", noStore())
+	resourcesAPI.GET("/sections", avdbSectionsHandler(deps.Resources))
+	resourcesAPI.GET("/resources", avdbResourcesHandler(deps.Resources))
+	resourcesAPI.POST("/import", avdbImportHandler(deps.Resources))
+	resourcesAPI.POST("/resources/:tid/offline", avdbResourceOfflineHandler(deps.Resources, deps.Offline))
+	resourcesAPI.GET("/image", avdbResourceImageHandler(deps.Network))
 	protected.GET("/discover/movies/:id", discoverMovieHandler(deps.Catalogue))
 	protected.GET("/discover/movies/resolve", discoverResolveMovieHandler(deps.Catalogue))
 	protected.GET("/discover/movies/:id/magnets", discoverMagnetsHandler(deps.Catalogue))

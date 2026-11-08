@@ -12,6 +12,7 @@ import (
 
 	"github.com/ppxb/miyabi"
 	"github.com/ppxb/miyabi/internal/api"
+	"github.com/ppxb/miyabi/internal/avdb"
 	"github.com/ppxb/miyabi/internal/catalogue"
 	"github.com/ppxb/miyabi/internal/config"
 	"github.com/ppxb/miyabi/internal/database"
@@ -57,6 +58,7 @@ type App struct {
 	scrape    *scrape.Service
 	metadata  *metadata.Service
 	embySvc   *emby.Service
+	resources *avdb.ResourceStore
 }
 
 // New initializes all services, database connections, and registers task handlers.
@@ -181,6 +183,13 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 
 	pools := newTaskPools(taskSvc, logger)
 
+	// Imported AVDB exports live in their own SQLite file; failures here must
+	// not stop the rest of the app from booting.
+	resourceStore, resourceErr := avdb.OpenResourceStore(cfg.DataDir)
+	if resourceErr != nil {
+		logger.Warn("avdb resource library unavailable", "error", resourceErr)
+	}
+
 	router := api.NewRouter(api.Dependencies{
 		Logger:         logger,
 		Access:         api.NewAccessGateService(cfg.AccessPassword, cfg.JWTSecret),
@@ -196,6 +205,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Maintenance:    maintenanceSvc,
 		Network:        networkSvc,
 		Emby:           embySvc,
+		Rankings:       avdb.New(avdb.Options{BaseURL: cfg.AVDBURL, APIKey: cfg.AVDBAPIKey, Proxy: networkSvc.ProxyManager()}),
+		Resources:      resourceStore,
 		Frontend:       miyabi.Frontend(),
 		STRMToken:      cfg.STRMToken,
 		TrustedProxies: cfg.TrustedProxies,
@@ -221,6 +232,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		scrape:    scrapeSvc,
 		metadata:  metadataSvc,
 		embySvc:   embySvc,
+		resources: resourceStore,
 	}, nil
 }
 
@@ -292,6 +304,9 @@ func (a *App) Close() error {
 	}
 	if a.driveSvc != nil {
 		a.driveSvc.Close()
+	}
+	if a.resources != nil {
+		_ = a.resources.Close()
 	}
 	if a.store != nil {
 		return a.store.Close()

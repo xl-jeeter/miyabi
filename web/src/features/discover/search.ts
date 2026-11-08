@@ -2,13 +2,15 @@ import type { JavDBZone } from '@/api/discover'
 import { parseSearchPage } from '@/lib/search-schema'
 import { DISCOVER_ZONES } from './constants'
 
-export type DiscoverView = 'released' | 'upcoming' | 'category'
+export type DiscoverView = 'released' | 'upcoming' | 'category' | 'rankings' | 'resources'
 export type CategoryFilters = { zone: JavDBZone; categoryID: string; tagID: string; main: string }
 export type DiscoverSearch = Partial<CategoryFilters> & {
   view?: DiscoverView
   releasedPage?: number
   upcomingPage?: number
   categoryPage?: number
+  rankingsPage?: number
+  resourcesPage?: number
 }
 
 export function validateMainSearch(search: Record<string, unknown>): { main?: string } {
@@ -22,7 +24,14 @@ export function validateMainSearch(search: Record<string, unknown>): { main?: st
 
 export function validateDiscoverSearch(search: Record<string, unknown>): DiscoverSearch {
   const { view, zone, categoryID, tagID } = search
-  if (view !== undefined && view !== 'released' && view !== 'upcoming' && view !== 'category') {
+  if (
+    view !== undefined &&
+    view !== 'released' &&
+    view !== 'upcoming' &&
+    view !== 'category' &&
+    view !== 'rankings' &&
+    view !== 'resources'
+  ) {
     throw new Error('浏览类型无效')
   }
   if (zone !== undefined && !DISCOVER_ZONES.some(item => item.value === zone)) {
@@ -37,10 +46,15 @@ export function validateDiscoverSearch(search: Record<string, unknown>): Discove
     throw new Error('分类筛选无效')
   }
   return {
-    view: view === 'upcoming' || view === 'category' ? view : undefined,
+    view:
+      view === 'upcoming' || view === 'category' || view === 'rankings' || view === 'resources'
+        ? view
+        : undefined,
     releasedPage: parseSearchPage(search.releasedPage),
     upcomingPage: parseSearchPage(search.upcomingPage),
     categoryPage: parseSearchPage(search.categoryPage),
+    rankingsPage: parseSearchPage(search.rankingsPage),
+    resourcesPage: parseSearchPage(search.resourcesPage),
     zone: zone && zone !== 'censored' ? (zone as JavDBZone) : undefined,
     categoryID: categoryID || undefined,
     tagID: tag || undefined,

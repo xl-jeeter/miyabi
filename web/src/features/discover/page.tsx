@@ -6,6 +6,8 @@ import { categoryFromSearch, updateCategorySearch, type DiscoverView } from './s
 import { BrowseResults } from './browse-results'
 import { CategoryContent } from './category-content'
 import { DISCOVER_PAGE_SIZE as PAGE_SIZE } from './constants'
+import { RankingsContent } from './rankings'
+import { ResourcesContent } from './resources'
 
 const route = getRouteApi('/discover')
 
@@ -25,13 +27,15 @@ export function DiscoverPage() {
 
   return (
     <AppPage>
-      <PageHeader title="发现" description="浏览最新发行、即将发行和分类内容" />
+      <PageHeader title="发现" description="浏览最新发行、即将发行、分类内容、AVDB 榜单与导入的资源库" />
       <div className="min-w-0 space-y-6">
         <Tabs value={view} onValueChange={value => setView(value as DiscoverView)}>
           <TabsList>
             <TabsTrigger value="released">最新发行</TabsTrigger>
             <TabsTrigger value="upcoming">即将发行</TabsTrigger>
             <TabsTrigger value="category">分类浏览</TabsTrigger>
+            <TabsTrigger value="rankings">榜单</TabsTrigger>
+            <TabsTrigger value="resources">资源库</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -44,6 +48,10 @@ export function DiscoverPage() {
             page={page}
             onPageChange={next => setPage('category', next)}
           />
+        ) : view === 'rankings' ? (
+          <RankingsContent />
+        ) : view === 'resources' ? (
+          <ResourcesContent />
         ) : (
           <BrowseResults
             key={view}

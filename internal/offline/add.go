@@ -26,7 +26,22 @@ func (service *Service) Add(ctx context.Context, movieID, hash string) (domain.O
 	if err != nil {
 		return domain.OfflineSubmission{}, err
 	}
-	code := codeid.Normalize(rawCode)
+	return service.submitOffline(ctx, movieID, codeid.Normalize(rawCode), hash)
+}
+
+// AddByHash submits a magnet that does not come from the catalogue, for example
+// one imported from an AVDB resource export. Catalogue membership cannot be
+// checked, so the caller is responsible for the magnet being genuine.
+func (service *Service) AddByHash(ctx context.Context, code, hash string) (domain.OfflineSubmission, error) {
+	hash = strings.ToLower(strings.TrimSpace(hash))
+	if len(hash) != 40 {
+		return domain.OfflineSubmission{}, domain.E(domain.KindInvalid, "磁力链接缺少有效的 BTIH", nil)
+	}
+	return service.submitOffline(ctx, "", codeid.Normalize(code), hash)
+}
+
+// submitOffline performs the actual 115 submission once the code and hash are known.
+func (service *Service) submitOffline(ctx context.Context, movieID, code, hash string) (domain.OfflineSubmission, error) {
 	_, prefs, err := service.config(ctx)
 	if err != nil {
 		return domain.OfflineSubmission{}, err

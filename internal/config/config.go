@@ -27,6 +27,10 @@ type Config struct {
 	EmbyMediaPath  string
 	EmbySyncActors bool
 	TrustedProxies []string
+	// AVDB integration: optional external AVDB instance used as a read-only
+	// discovery source. Empty BaseURL disables the feature entirely.
+	AVDBURL    string
+	AVDBAPIKey string
 }
 
 func Load() (Config, error) {
@@ -83,6 +87,8 @@ func Load() (Config, error) {
 		EmbyMediaPath:  embyMediaPath,
 		EmbySyncActors: embySyncActors,
 		TrustedProxies: trustedProxies,
+		AVDBURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("MIYABI_AVDB_URL")), "/"),
+		AVDBAPIKey:     strings.TrimSpace(os.Getenv("MIYABI_AVDB_API_KEY")),
 	}
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
