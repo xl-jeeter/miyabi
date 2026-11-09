@@ -4,6 +4,8 @@
 
 Miyabi 支持直接对接 115 进行刮削、订阅，也可由 Miyabi 作为底层服务，对 Emby 提供支持。
 
+可选地，Miyabi 还能接入自建的 AVDB 实例：在「发现」页多出一个榜单来源，并可导入 AVDB 导出的资源清单当作本地资源库使用（详见 [AVDB 集成](#avdb-集成可选)）。
+
 ## 项目预览
 
 ![媒体库](./screenshots/ScreenShot_2026-09-19_131853_357.png)
@@ -121,11 +123,41 @@ docker compose pull && docker compose up -d
 | `MIYABI_EMBY_API_KEY`    | Emby API 密钥（在 Emby「高级」→「API 密钥」中生成）   | 空，可在 Web 界面动态配置                     |
 | `MIYABI_EMBY_MEDIA_PATH` | Emby 容器内挂载的媒体库路径（如 `/media`）            | 空（默认使用本地路径），可在 Web 界面动态配置 |
 | `MIYABI_STRM_TOKEN`      | STRM 播放直链访问鉴权 Token                           | 空，未启用 Token 鉴权                         |
+| `MIYABI_AVDB_URL`        | 外部 AVDB 实例地址（如 `http://192.168.1.100:8000`），用于「榜单」       | 空，关闭 AVDB 在线数据源                      |
+| `MIYABI_AVDB_API_KEY`    | AVDB 的 API Key（在 AVDB「设置」→「令牌」中生成）      | 空，无 Key 时 AVDB 接口会返回 401             |
 
 部署在 nginx 等反向代理后面时，需将反向代理连接 Miyabi 时使用的 IP 填入 `MIYABI_TRUSTED_PROXIES`，以便正确识别客户端 IP。
 
 > [!TIP]
 > Emby 相关配置（服务器地址、API Key、媒体库路径等）除通过环境变量在容器初始化时配置外，也可以在服务启动后随时通过 Web 界面「设置」→「Emby」中进行可视化配置与连通性测试。
+
+## AVDB 集成（可选）
+
+Miyabi 的「发现」页可以额外接入自建的 [AVDB](https://github.com/leolitaly/avdb) 实例，分为两条独立的链路，都不配置也不影响原有功能。
+
+### 榜单
+
+配置 `MIYABI_AVDB_URL` 与 `MIYABI_AVDB_API_KEY` 后，「发现」→「榜单」会通过 Miyabi 后端代理 AVDB 的 `javdb/rankings` 接口，提供**今日 / 本周 / 本月**三个周期，返回结构与「最新发行」完全一致，因此复用同一套卡片与详情弹窗。
+
+- AVDB 首次查询需要回源 JavDB，冷缓存时可能要十几秒；Miyabi 侧超时设为 45 秒，并缓存 5 分钟
+- AVDB 的影片 ID 与本站 JavDB ID 不同。点击榜单卡片时，Miyabi 会先用**番号**在 JavDB 解析出真实 ID 再打开详情，磁力与「一键加入 115」因此照常可用；番号在 JavDB 不存在时会给出提示
+
+### 资源库
+
+「发现」→「资源库」用于导入 AVDB 导出的资源清单，**完全离线可用**，不依赖 AVDB 在线：
+
+1. 在 AVDB 后台「数据库」页面导出，得到 `xxx_<条数>_<时间>.zip`（内含一个 UTF-8 CSV）
+2. 在 Miyabi「资源库」点击「导入 AVDB 导出文件」，选择该 `.zip`（也支持直接给 `.csv`）
+3. 导入按 `tid` 覆盖写入，可重复导入；数据存放在 `$MIYABI_DATA_DIR/avdb-resources.db`，与 Miyabi 自身的 ent 数据库分离
+
+导入后可以：
+
+- 按分区查看（卡片显示条目数与子分类），支持按番号或标题搜索、分页
+- 每条资源展示缩略图、磁力链接、原帖链接
+- 点「115 离线」直接把该资源的磁力提交到 115，**不要求这部片子在 JavDB 目录里存在**
+
+> [!NOTE]
+> AVDB 的图床大多有防盗链，通用 `/api/image` 只放行 JavDB 域名，因此资源缩略图走独立代理 `GET /api/avdb/image`（自动带浏览器 UA、同源 Referer，并遵循「设置」→「网络」中的代理）。AVDB 导出的部分图片本身已失效，前端会隐藏占位。
 
 ## NSFW 警告
 
