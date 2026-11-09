@@ -2,6 +2,7 @@ package offline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,7 +11,17 @@ import (
 	"github.com/ppxb/miyabi/internal/domain/download"
 	"github.com/ppxb/miyabi/internal/ent"
 	"github.com/ppxb/miyabi/internal/ent/offlinedownload"
+	"github.com/ppxb/miyabi/internal/pan"
 )
+
+const panUnauthorizedMessage = "115 未登录或授权已失效，请在设置中重新登录 115"
+
+func mapPanUnauthorized(err error) error {
+	if errors.Is(err, pan.ErrUnauthorized) {
+		return domain.E(domain.KindUnauthorized, panUnauthorizedMessage, err)
+	}
+	return err
+}
 
 // Add validates and records a new offline download for the given movie ID and magnet hash.
 func (service *Service) Add(ctx context.Context, movieID, hash string) (domain.OfflineSubmission, error) {
@@ -49,7 +60,7 @@ func (service *Service) submitOffline(ctx context.Context, movieID, code, hash s
 
 	sess, err := service.drive.Open(ctx)
 	if err != nil {
-		return domain.OfflineSubmission{}, fmt.Errorf("get 115 account for offline download: %w", err)
+		return domain.OfflineSubmission{}, mapPanUnauthorized(fmt.Errorf("get 115 account for offline download: %w", err))
 	}
 	source := sess.Source()
 	directory := source.Directory
@@ -119,7 +130,8 @@ func (service *Service) submitOffline(ctx context.Context, movieID, code, hash s
 	}
 	remote, err := service.submit(submitContext, sess, hash)
 	if err != nil {
-		return domain.OfflineSubmission{}, service.deferAction(submitContext, created, state, fmt.Errorf("submit 115 offline download: %w", err))
+		return domain.OfflineSubmission{}, service.deferAction(submitContext, created, state,
+			mapPanUnauthorized(fmt.Errorf("submit 115 offline download: %w", err)))
 	}
 	if err := service.recordSubmission(submitContext, created, state, remote); err != nil {
 		return domain.OfflineSubmission{}, service.deferAction(submitContext, created, state, err)

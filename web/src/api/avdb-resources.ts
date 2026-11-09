@@ -14,7 +14,7 @@ export type AvdbSection = {
 }
 
 export type AvdbResource = {
-  tid: number
+  tid: string
   number: string
   title: string
   publish_date: string
@@ -116,8 +116,8 @@ export function resourceImage(resource: AvdbResource): string {
 /** 把导入资源的磁力直接提交到 115 离线。 */
 export function useResourceOffline() {
   return useMutation({
-    mutationFn: (tid: number) =>
-      apiPost<{ task_id: string }>(`/api/avdb/resources/${tid}/offline`)
+    mutationFn: (tid: string) =>
+      apiPost<{ task_id: string }>(`/api/avdb/resources/${encodeURIComponent(tid)}/offline`)
   })
 }
 

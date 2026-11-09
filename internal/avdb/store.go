@@ -22,7 +22,7 @@ import (
 
 // Resource is one row of an AVDB article export (a downloadable resource entry).
 type Resource struct {
-	Tid           int64  `json:"tid"`
+	Tid           int64  `json:"tid,string"`
 	Number        string `json:"number"`
 	Title         string `json:"title"`
 	PublishDate   string `json:"publish_date"`

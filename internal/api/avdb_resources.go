@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,7 +99,7 @@ func avdbImportHandler(resources ResourceManager) gin.HandlerFunc {
 }
 
 type resourceURI struct {
-	Tid int64 `uri:"tid" binding:"required,min=1"`
+	Tid string `uri:"tid" binding:"required"`
 }
 
 // btihFromMagnet extracts the BTIH from a magnet URI (hex or base32).
@@ -127,7 +128,12 @@ func avdbResourceOfflineHandler(resources ResourceManager, offline OfflineManage
 		if !ok {
 			return
 		}
-		resource, err := resources.Get(c.Request.Context(), uri.Tid)
+		tid, err := strconv.ParseInt(uri.Tid, 10, 64)
+		if err != nil {
+			respond(c, nil, domain.E(domain.KindInvalid, "资源 ID 无效", err))
+			return
+		}
+		resource, err := resources.Get(c.Request.Context(), tid)
 		if err != nil {
 			respond(c, nil, err)
 			return
