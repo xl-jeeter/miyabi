@@ -25,6 +25,11 @@ type Options struct {
 	DeviceUUID    string
 	Proxy         *netx.ProxyManager
 	Timeout       time.Duration
+	// Username and Password let the client create a JavDB session when the
+	// API starts answering JWTVerificationError for anonymous callers.
+	Username string
+	Password string
+	Token    func() string
 }
 
 // RouteStatus describes the currently selected API route.

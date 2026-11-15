@@ -17,6 +17,7 @@ type transport struct {
 	host       string
 	client     netx.FingerprintHTTPClient
 	deviceUUID string
+	token      func() string
 }
 
 // routeTransport uses the managed client for normal API requests. Probe
@@ -26,7 +27,7 @@ func routeTransport(host string, client netx.FingerprintHTTPClient, options Opti
 	if err != nil {
 		return nil, err
 	}
-	return &transport{host: host, client: client, deviceUUID: options.DeviceUUID}, nil
+	return &transport{host: host, client: client, deviceUUID: options.DeviceUUID, token: options.Token}, nil
 }
 
 type networkError struct {
@@ -136,5 +137,38 @@ func (t *transport) newRequest(
 	request.Header.Set("connection", "keep-alive")
 	request.Header.Set("jdsignature", signature(timestamp))
 	request.Header.Set("user-agent", userAgent)
+	if t.token != nil {
+		if token := t.token(); token != "" {
+			request.Header.Set("authorization", "Bearer "+token)
+		}
+	}
 	return request, nil
+}
+
+// postRaw issues a bodyless POST and returns the raw body. Session creation
+// uses it because the login envelope is not the standard data envelope.
+func (t *transport) postRaw(
+	ctx context.Context,
+	path string,
+	params url.Values,
+) ([]byte, error) {
+	request, err := t.newRequest(ctx, path, params, time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	request.Method = http.MethodPost
+	response, err := t.client.Do(request)
+	if err != nil {
+		return nil, &networkError{err: err}
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.CopyN(io.Discard, response.Body, 4096)
+		return nil, &HTTPError{StatusCode: response.StatusCode, RetryAfter: parseRetryAfter(response.Header.Get("Retry-After"), time.Now())}
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBodyBytes+1))
+	if err != nil {
+		return nil, &networkError{err: fmt.Errorf("read JavDB response: %w", err)}
+	}
+	return body, nil
 }

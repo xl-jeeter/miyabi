@@ -45,6 +45,8 @@ type Client struct {
 	stopRoutes    context.CancelFunc
 	selector      func(context.Context, routeSelection) (*routeState, error)
 	fingerprint   *netx.ProxiedFingerprintClient
+	tokenValue    atomic.Pointer[string]
+	loginMu       sync.Mutex
 }
 
 func New(options Options) (*Client, error) {
@@ -74,6 +76,7 @@ func New(options Options) (*Client, error) {
 		stopRoutes:   stopRoutes,
 		fingerprint:  fingerprint,
 	}
+	client.options.Token = client.authToken
 	client.selector = client.selectAndInstall
 	if options.Proxy != nil {
 		go client.watchProxy()
@@ -227,6 +230,7 @@ func (c *Client) getJSON(
 	}
 	deadline := time.Now().Add(maxRateLimitWait)
 	failover := false
+	reauthenticated := false
 	for retries := 0; ; {
 		if err := c.waitRequest(ctx, deadline); err != nil {
 			return err
@@ -237,6 +241,15 @@ func (c *Client) getJSON(
 		err = state.transport.getJSON(ctx, path, params, destination)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// JavDB now rejects anonymous App API calls. Open a session once and
+		// replay the request before reporting the failure to the caller.
+		if authFailure(err) && !reauthenticated && c.hasCredentials() {
+			reauthenticated = true
+			if loginErr := c.refreshToken(ctx); loginErr != nil {
+				return err
+			}
+			continue
 		}
 		var response *HTTPError
 		if errors.As(err, &response) && response.StatusCode == 429 {

@@ -38,6 +38,20 @@ func (transport *fixtureTransport) getJSON(
 
 func (*fixtureTransport) closeIdleConnections() {}
 
+// postRaw serves session-creation fixtures through the same response map.
+func (transport *fixtureTransport) postRaw(
+	_ context.Context,
+	path string,
+	params url.Values,
+) ([]byte, error) {
+	transport.calls = append(transport.calls, fixtureCall{path: path, params: params})
+	body, ok := transport.responses[path]
+	if !ok {
+		return nil, fmt.Errorf("missing fixture for %s", path)
+	}
+	return body, nil
+}
+
 func fixtureFile(t *testing.T, name string) []byte {
 	t.Helper()
 	body, err := os.ReadFile(filepath.Join("testdata", name))

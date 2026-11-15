@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,8 @@ func New(
 		Proxy:         proxy,
 		CachedHost:    route.Host,
 		CachedLatency: time.Duration(route.LatencyMS) * time.Millisecond,
+		Username:      os.Getenv("MIYABI_JAVDB_USERNAME"),
+		Password:      os.Getenv("MIYABI_JAVDB_PASSWORD"),
 	})
 	if err != nil {
 		return nil, err
