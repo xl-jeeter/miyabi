@@ -29,11 +29,13 @@ type persistedRoute struct {
 
 // Service combines JavDB catalogue data with Miyabi's local library and workflow state.
 type Service struct {
-	database   *ent.Client
-	local      LocalState
-	javdb      JavDBClient
-	javbus     JavBusSource
-	aggregator *magnet.Aggregator
+	database     *ent.Client
+	local        LocalState
+	javdb        JavDBClient
+	javbus       JavBusSource
+	avdbFallback MovieDetailFallback
+	avdbSource   AVDBSource
+	aggregator   *magnet.Aggregator
 
 	proxy   *netx.ProxyManager
 	lists   *responseCache[[]domain.Movie]
@@ -54,6 +56,7 @@ func New(
 	proxy *netx.ProxyManager,
 	local LocalState,
 	supplement JavBusSource,
+	avdbSources ...AVDBSource,
 ) (*Service, error) {
 	deviceUUID, found, err := database.LoadSetting[string](ctx, db, javdbDeviceSetting)
 	if err != nil {
@@ -85,7 +88,7 @@ func New(
 		return nil, err
 	}
 
-	service := newService(db, client, supplement, local, route)
+	service := newService(db, client, supplement, local, route, avdbSources...)
 	service.proxy = proxy
 	return service, nil
 }
@@ -98,12 +101,13 @@ func NewWithClients(
 	primary JavDBClient,
 	supplement JavBusSource,
 	local LocalState,
+	avdbSources ...AVDBSource,
 ) (*Service, error) {
 	route, _, err := database.LoadSetting[persistedRoute](ctx, db, javdbRouteSetting)
 	if err != nil {
 		return nil, err
 	}
-	return newService(db, primary, supplement, local, route), nil
+	return newService(db, primary, supplement, local, route, avdbSources...), nil
 }
 
 // Response caches absorb repeated page loads; entries are small and short-lived
@@ -115,15 +119,34 @@ const (
 	magnetsCacheSize, magnetsCacheTTL = 64, time.Minute
 )
 
-func newService(database *ent.Client, primary JavDBClient, supplement JavBusSource, local LocalState, route persistedRoute) *Service {
+func newService(
+	database *ent.Client,
+	primary JavDBClient,
+	supplement JavBusSource,
+	local LocalState,
+	route persistedRoute,
+	avdbSources ...AVDBSource,
+) *Service {
 	sources := []magnet.Source{primary}
 	if supplement != nil {
 		sources = append(sources, supplement)
+	}
+	var avdbFallback MovieDetailFallback
+	var avdbSource AVDBSource
+	for _, source := range avdbSources {
+		if source != nil && source.Enabled() {
+			avdbFallback = source
+			avdbSource = source
+			sources = append(sources, source)
+			break
+		}
 	}
 	return &Service{
 		database:       database,
 		javdb:          primary,
 		javbus:         supplement,
+		avdbFallback:   avdbFallback,
+		avdbSource:     avdbSource,
 		aggregator:     magnet.NewAggregator(sources, 0),
 		lists:          newResponseCache[[]domain.Movie](listCacheSize, listCacheTTL),
 		details:        newResponseCache[domain.MovieDetail](detailCacheSize, detailCacheTTL),
@@ -173,7 +196,7 @@ func (service *Service) Browse(
 
 func (service *Service) CatalogueDetail(ctx context.Context, movieID string) (domain.MovieDetail, error) {
 	return cachedJavDB(ctx, service, service.details, movieID, func(ctx context.Context) (domain.MovieDetail, error) {
-		detail, err := service.javdb.MovieDetail(ctx, movieID)
+		detail, err := service.movieDetail(ctx, movieID)
 		if err != nil {
 			return domain.MovieDetail{}, err
 		}
@@ -182,6 +205,14 @@ func (service *Service) CatalogueDetail(ctx context.Context, movieID string) (do
 		}
 		return detail, nil
 	})
+}
+
+func (service *Service) movieDetail(ctx context.Context, movieID string) (domain.MovieDetail, error) {
+	detail, err := service.javdb.MovieDetail(ctx, movieID)
+	if err == nil || service.avdbFallback == nil || !javdb.IsAuthFailure(err) {
+		return detail, err
+	}
+	return service.avdbFallback.MovieDetail(ctx, movieID)
 }
 
 func (service *Service) RefreshCatalogueDetail(ctx context.Context, movieID string) (domain.MovieDetail, error) {
@@ -259,6 +290,11 @@ func (service *Service) Tags(ctx context.Context, zone domain.Zone) ([]domain.Ta
 func (service *Service) ResolveMovieID(ctx context.Context, code string) (string, error) {
 	id, err := service.javdb.ResolveMovieID(ctx, code)
 	if err != nil {
+		if service.avdbSource != nil && javdb.IsAuthFailure(err) {
+			if resolved, fallbackErr := service.avdbSource.ResolveMovieID(ctx, code); fallbackErr == nil {
+				return resolved, nil
+			}
+		}
 		return "", fmt.Errorf("resolve JavDB movie ID: %w", err)
 	}
 	if err := service.persistActiveRoute(ctx); err != nil {

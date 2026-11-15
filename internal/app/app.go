@@ -101,7 +101,12 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	catalogueSvc, err := catalogue.New(ctx, store.Client, networkSvc.ProxyManager(), libSvc, javbusClient)
+	avdbClient := avdb.New(avdb.Options{
+		BaseURL: cfg.AVDBURL,
+		APIKey:  cfg.AVDBAPIKey,
+		Proxy:   networkSvc.ProxyManager(),
+	})
+	catalogueSvc, err := catalogue.New(ctx, store.Client, networkSvc.ProxyManager(), libSvc, javbusClient, avdbClient)
 	if err != nil {
 		javbusClient.Close()
 		driveSvc.Close()
@@ -205,7 +210,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Maintenance:    maintenanceSvc,
 		Network:        networkSvc,
 		Emby:           embySvc,
-		Rankings:       avdb.New(avdb.Options{BaseURL: cfg.AVDBURL, APIKey: cfg.AVDBAPIKey, Proxy: networkSvc.ProxyManager()}),
+		Rankings:       avdbClient,
 		Resources:      resourceStore,
 		Frontend:       miyabi.Frontend(),
 		STRMToken:      cfg.STRMToken,

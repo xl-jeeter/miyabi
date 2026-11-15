@@ -34,6 +34,19 @@ func authFailure(err error) bool {
 	return false
 }
 
+// IsAuthFailure reports whether JavDB rejected the caller's authentication.
+func IsAuthFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if authFailure(err) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "jwtverificationerror") ||
+		strings.Contains(text, "請登錄帳號")
+}
+
 // sessionEnvelope mirrors the session endpoint, whose success flag is the
 // number 1, not a boolean.
 type sessionEnvelope struct {

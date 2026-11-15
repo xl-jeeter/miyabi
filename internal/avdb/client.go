@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -90,27 +91,15 @@ func (c *Client) Rankings(ctx context.Context, period string, kind int) ([]domai
 	}
 
 	var payload envelope[rankingData]
-	request := c.http.R().
-		SetContext(ctx).
-		SetHeader("Accept", "application/json").
-		SetQueryParam("type", fmt.Sprintf("%d", kind)).
-		SetQueryParam("period", string(normalized)).
-		SetResult(&payload)
-	if c.apiKey != "" {
-		request.SetHeader("X-API-Key", c.apiKey)
+	query := url.Values{
+		"type":   {fmt.Sprintf("%d", kind)},
+		"period": {string(normalized)},
 	}
-
-	response, err := request.Get(c.baseURL + "/api/v1/javdb/rankings")
-	if err != nil {
-		return nil, domain.E(domain.KindUpstream, "连接 AVDB 失败", err)
-	}
-	if response.StatusCode() != http.StatusOK {
-		return nil, domain.E(domain.KindUpstream,
-			fmt.Sprintf("AVDB 返回 %d", response.StatusCode()), nil)
+	if err := c.getJSON(ctx, "/api/v1/javdb/rankings", query, &payload); err != nil {
+		return nil, err
 	}
 	if payload.Code != 0 {
-		return nil, domain.E(domain.KindUpstream,
-			fmt.Sprintf("AVDB 错误：%s", payload.Message), nil)
+		return nil, avdbError(payload.Message)
 	}
 
 	movies := make([]domain.Movie, 0, len(payload.Data.Movies))
@@ -124,6 +113,38 @@ func (c *Client) Rankings(ctx context.Context, period string, kind int) ([]domai
 
 	c.store(cacheKey, movies)
 	return movies, nil
+}
+
+func (c *Client) getJSON(ctx context.Context, path string, query url.Values, destination any) error {
+	if c == nil {
+		return domain.E(domain.KindInvalid, "AVDB 数据源未配置", nil)
+	}
+	request := c.http.R().
+		SetContext(ctx).
+		SetHeader("Accept", "application/json").
+		SetResult(destination)
+	if c.apiKey != "" {
+		request.SetHeader("X-API-Key", c.apiKey)
+	}
+	for key, values := range query {
+		for _, value := range values {
+			request.SetQueryParam(key, value)
+		}
+	}
+
+	response, err := request.Get(c.baseURL + path)
+	if err != nil {
+		return domain.E(domain.KindUpstream, "连接 AVDB 失败", err)
+	}
+	if response.StatusCode() != http.StatusOK {
+		return domain.E(domain.KindUpstream,
+			fmt.Sprintf("AVDB 返回 %d", response.StatusCode()), nil)
+	}
+	return nil
+}
+
+func avdbError(message string) error {
+	return domain.E(domain.KindUpstream, fmt.Sprintf("AVDB 错误：%s", message), nil)
 }
 
 func normalizePeriod(period string) (RankingPeriod, bool) {

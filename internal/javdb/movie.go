@@ -2,6 +2,7 @@ package javdb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,22 +29,35 @@ func (c *Client) MovieDetail(ctx context.Context, movieID string) (domain.MovieD
 	); err != nil {
 		return domain.MovieDetail{}, err
 	}
-	movie, err := movieFromWire(ctx, data.Movie.wireMovie)
+	return movieDetailFromWire(ctx, data.Movie)
+}
+
+// DecodeMovieDetailObject converts a JavDB movie object into Miyabi's detail model.
+func DecodeMovieDetailObject(ctx context.Context, raw json.RawMessage) (domain.MovieDetail, error) {
+	var source wireMovieDetail
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return domain.MovieDetail{}, fmt.Errorf("decode JavDB movie object: %w", err)
+	}
+	return movieDetailFromWire(ctx, source)
+}
+
+func movieDetailFromWire(ctx context.Context, data wireMovieDetail) (domain.MovieDetail, error) {
+	movie, err := movieFromWire(ctx, data.wireMovie)
 	if err != nil {
 		return domain.MovieDetail{}, err
 	}
 	zone := domain.ZoneUnknown
-	if data.Movie.Type != nil {
-		zone = zoneFromCode(*data.Movie.Type)
+	if data.Type != nil {
+		zone = zoneFromCode(*data.Type)
 		if zone == domain.ZoneUnknown {
 			slog.WarnContext(ctx, "unknown JavDB movie type; using unknown zone",
-				"movie_id", movie.ID, "field", "type", "value", *data.Movie.Type)
+				"movie_id", movie.ID, "field", "type", "value", *data.Type)
 		}
 	}
 	return domain.MovieDetail{
 		Movie: movie, Zone: zone,
-		ActorMovies:   movieReferencesFromWire(ctx, movie.ID, "actor_movies", data.Movie.ActorMovies),
-		RelatedMovies: movieReferencesFromWire(ctx, movie.ID, "relative_movies", data.Movie.RelatedMovies),
+		ActorMovies:   movieReferencesFromWire(ctx, movie.ID, "actor_movies", data.ActorMovies),
+		RelatedMovies: movieReferencesFromWire(ctx, movie.ID, "relative_movies", data.RelatedMovies),
 	}, nil
 }
 

@@ -77,6 +77,19 @@ type JavBusSource interface {
 	Close()
 }
 
+// MovieDetailFallback supplies movie details when JavDB rejects authentication.
+type MovieDetailFallback interface {
+	MovieDetail(context.Context, string) (domain.MovieDetail, error)
+}
+
+// AVDBSource supplies fallback details, code resolution and supplementary magnets.
+type AVDBSource interface {
+	MovieDetailFallback
+	ResolveMovieID(context.Context, string) (string, error)
+	magnet.Source
+	Enabled() bool
+}
+
 // LocalState supplies the mounted library source and matches local movies.
 // It is implemented by library.Service to decouple catalogue from library storage.
 type LocalState interface {

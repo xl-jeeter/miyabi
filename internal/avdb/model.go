@@ -4,6 +4,7 @@
 package avdb
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/ppxb/miyabi/internal/domain"
@@ -18,6 +19,33 @@ type envelope[T any] struct {
 
 type rankingData struct {
 	Movies []wireMovie `json:"movies"`
+}
+
+type movieDetailData struct {
+	Movie json.RawMessage `json:"movie"`
+}
+
+type magnetsData struct {
+	Magnets []wireMagnet `json:"magnets"`
+}
+
+// searchData mirrors AVDB's JavDB search mirror, used to resolve a code to the
+// upstream movie id when JavDB itself rejects the client.
+type searchData struct {
+	Movies []struct {
+		ID     string `json:"id"`
+		Number string `json:"number"`
+	} `json:"movies"`
+}
+
+type wireMagnet struct {
+	Hash       string `json:"hash"`
+	Name       string `json:"name"`
+	SizeMiB    int64  `json:"size"`
+	CNSub      bool   `json:"cnsub"`
+	HD         bool   `json:"hd"`
+	FilesCount int    `json:"files_count"`
+	CreatedAt  string `json:"created_at"`
 }
 
 // wireMovie mirrors the subset of AVDB's movie payload that Miyabi renders.
