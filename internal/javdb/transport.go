@@ -70,6 +70,9 @@ func (t *transport) closeIdleConnections() {
 
 const maxResponseBodyBytes = 4 << 20 // 4 MiB
 
+// loginUserAgent is the only identity /api/v1/sessions accepts.
+const loginUserAgent = "Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
 func (t *transport) getJSON(
 	ctx context.Context,
 	path string,
@@ -157,6 +160,9 @@ func (t *transport) postRaw(
 		return nil, err
 	}
 	request.Method = http.MethodPost
+	// JavDB drops the TLS connection when the session endpoint sees the Dart
+	// client UA, so login requests present a browser identity instead.
+	request.Header.Set("user-agent", loginUserAgent)
 	response, err := t.client.Do(request)
 	if err != nil {
 		return nil, &networkError{err: err}

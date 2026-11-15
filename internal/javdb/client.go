@@ -246,7 +246,9 @@ func (c *Client) getJSON(
 		// replay the request before reporting the failure to the caller.
 		if authFailure(err) && !reauthenticated && c.hasCredentials() {
 			reauthenticated = true
+			slog.InfoContext(ctx, "JavDB auth rejected, opening a session", "path", path)
 			if loginErr := c.refreshToken(ctx); loginErr != nil {
+				slog.WarnContext(ctx, "JavDB session login failed", "error", loginErr)
 				return err
 			}
 			continue

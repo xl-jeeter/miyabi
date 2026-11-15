@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 )
@@ -33,9 +34,12 @@ func authFailure(err error) bool {
 	return false
 }
 
+// sessionEnvelope mirrors the session endpoint, whose success flag is the
+// number 1, not a boolean.
 type sessionEnvelope struct {
-	Success bool `json:"success"`
+	Success int    `json:"success"`
 	Message string `json:"message"`
+	Action  string `json:"action"`
 	Data    struct {
 		Token string `json:"token"`
 	} `json:"data"`
@@ -56,6 +60,7 @@ func (c *Client) refreshToken(ctx context.Context) error {
 	defer c.loginMu.Unlock()
 	state, err := c.ensureRoute(ctx)
 	if err != nil {
+		slog.WarnContext(ctx, "JavDB route unavailable for login", "error", err)
 		return err
 	}
 	transport, err := routeTransport(state.host, c.fingerprint, c.options)
@@ -69,8 +74,10 @@ func (c *Client) refreshToken(ctx context.Context) error {
 	}
 	body, err := transport.postRaw(ctx, "/api/v1/sessions", params)
 	if err != nil {
+		slog.WarnContext(ctx, "JavDB login request failed", "host", state.host, "error", err)
 		return fmt.Errorf("JavDB 登录请求失败: %w", err)
 	}
+	slog.InfoContext(ctx, "JavDB login response", "host", state.host, "bytes", len(body), "head", string(body[:min(len(body), 160)]))
 	var envelope sessionEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return fmt.Errorf("解析 JavDB 登录响应失败: %w", err)
@@ -81,9 +88,11 @@ func (c *Client) refreshToken(ctx context.Context) error {
 		if message == "" {
 			message = "JavDB 用户名或密码错误"
 		}
+		slog.WarnContext(ctx, "JavDB login rejected", "action", strings.TrimSpace(envelope.Action), "message", message, "body", string(body[:min(len(body), 200)]))
 		return errors.New(message)
 	}
 	c.tokenValue.Store(&token)
+	slog.InfoContext(ctx, "JavDB session opened", "username", c.options.Username, "token_len", len(token))
 	return nil
 }
 
