@@ -38,6 +38,8 @@ func (stub *networkStub) TestNetwork(_ context.Context, config netx.ProxyConfig)
 	return stub.testResult, nil
 }
 
+func (stub *networkStub) ProxyManager() *netx.ProxyManager { return nil }
+
 func TestNetworkEndpointsReadAndWrite(t *testing.T) {
 	stub := &networkStub{config: netx.ProxyConfig{Enabled: true, URL: "http://user:secret@127.0.0.1:7890"}}
 	router := NewRouter(Dependencies{Access: NewAccessGateService("", ""), Network: stub, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})

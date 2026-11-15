@@ -70,8 +70,9 @@ func (s *Scanner) Run(ctx context.Context, job tasks.Job) error {
 	if err != nil {
 		return err
 	}
-	if payload.OfflineTaskID != 0 && (payload.TargetID == "" || payload.JavDBID == "" || payload.Code == "") {
-		return domain.E(domain.KindInvalid, "离线扫描缺少下载位置或 JavDB 影片信息", nil)
+	// AVDB 导入的资源没有 JavDB ID，只要有下载位置和番号就仍然可以入库。
+	if payload.OfflineTaskID != 0 && (payload.TargetID == "" || payload.Code == "") {
+		return domain.E(domain.KindInvalid, "离线扫描缺少下载位置或番号信息", nil)
 	}
 	// Index reconciliation and the next jobs commit together. A restart after
 	// that commit only needs to finish this task, not enqueue the jobs again.
