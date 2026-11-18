@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ppxb/miyabi/internal/domain"
@@ -34,6 +36,9 @@ const (
 	defaultGiteeAPI  = "https://gitee.com/api/v5"
 	releaseTimeout   = 30 * time.Second
 	downloadAttempts = 3
+
+	downloadPathMultiSource downloadPath = "multi_source"
+	downloadPathProxySingle downloadPath = "proxy_single"
 )
 
 var (
@@ -79,11 +84,17 @@ type ReleaseClientOptions struct {
 // ReleaseClient reads release metadata and streams package assets through the
 // same proxy-aware transport used by other upstream integrations.
 type ReleaseClient struct {
-	http        *http.Client
-	githubAPI   string
-	giteeAPI    string
-	githubToken string
-	retryDelay  func(attempt int) time.Duration
+	http                *http.Client
+	direct              *http.Client
+	mirrors             []string
+	downloadChunkSize   int64
+	downloadParts       int
+	downloadPerSource   int
+	downloadIdleTimeout time.Duration
+	githubAPI           string
+	giteeAPI            string
+	githubToken         string
+	retryDelay          func(attempt int) time.Duration
 }
 
 // NewReleaseClient creates a proxy-aware GitHub/Gitee release client.
@@ -100,12 +111,24 @@ func NewReleaseClient(options ReleaseClientOptions) *ReleaseClient {
 			return time.Second << (attempt - 1)
 		}
 	}
+	direct := options.HTTPClient
+	if direct == nil {
+		transport := netx.NewTransport(nil)
+		transport.ResponseHeaderTimeout = releaseTimeout
+		direct = &http.Client{Transport: transport}
+	}
 	return &ReleaseClient{
-		http:        client,
-		githubAPI:   defaultGitHubAPI,
-		giteeAPI:    defaultGiteeAPI,
-		githubToken: strings.TrimSpace(options.GitHubToken),
-		retryDelay:  retryDelay,
+		http:                client,
+		direct:              direct,
+		mirrors:             downloadMirrors(),
+		downloadChunkSize:   configuredDownloadChunkSize(),
+		downloadParts:       configuredDownloadParts(),
+		downloadPerSource:   configuredDownloadPerSource(),
+		downloadIdleTimeout: defaultDownloadIdleTimeout,
+		githubAPI:           defaultGitHubAPI,
+		giteeAPI:            defaultGiteeAPI,
+		githubToken:         strings.TrimSpace(options.GitHubToken),
+		retryDelay:          retryDelay,
 	}
 }
 
@@ -149,6 +172,14 @@ func (c *ReleaseClient) latestAssets(ctx context.Context, base, repo, provider s
 		request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	}
 	response, err := c.http.Do(request)
+	if err != nil && c.direct != nil {
+		// The configured proxy is flaky for api.github.com; retry directly.
+		retryRequest, buildErr := http.NewRequestWithContext(requestCtx, http.MethodGet, request.URL.String(), nil)
+		if buildErr == nil {
+			retryRequest.Header = request.Header.Clone()
+			response, err = c.direct.Do(retryRequest)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("连接 %s 失败: %w", provider, err)
 	}
@@ -306,8 +337,8 @@ func normalizeSource(value string) (string, bool) {
 	}
 }
 
-// DownloadAsset streams one release asset into a temporary file. The file is
-// rewound between retries and validated against both advertised sizes.
+// DownloadAsset downloads one release asset and validates it against the size
+// advertised by the release API.
 func (c *ReleaseClient) DownloadAsset(ctx context.Context, asset ReleaseAsset, file *os.File, progress func(int64)) error {
 	if asset.DownloadURL == "" {
 		return domain.E(domain.KindInvalid, "数据包缺少下载地址", nil)
@@ -317,79 +348,164 @@ func (c *ReleaseClient) DownloadAsset(ctx context.Context, asset ReleaseAsset, f
 		return domain.E(domain.KindInvalid, "数据包下载地址无效", err)
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= downloadAttempts; attempt++ {
-		if attempt > 1 {
-			delay := c.retryDelay(attempt - 1)
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return domain.E(domain.KindCanceled, "同步已取消", ctx.Err())
-			case <-timer.C:
-			}
-		}
-		lastErr = c.downloadAttempt(ctx, asset, file, progress)
-		if lastErr == nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return domain.E(domain.KindCanceled, "同步已取消", ctx.Err())
-		}
+	meter := &downloadMeter{report: progress}
+	started := time.Now()
+	path, lastErr := c.downloadAttempt(ctx, asset, file, meter)
+	if lastErr == nil {
+		logDownloadThroughput(asset.Name, path, asset.Size, time.Since(started))
+		return nil
+	}
+	if ctx.Err() != nil {
+		return domain.E(domain.KindCanceled, "同步已取消", ctx.Err())
 	}
 	return domain.E(domain.KindUpstream, "下载在线数据失败", lastErr)
 }
 
-func (c *ReleaseClient) downloadAttempt(ctx context.Context, asset ReleaseAsset, file *os.File, progress func(int64)) error {
+func (c *ReleaseClient) downloadAttempt(ctx context.Context, asset ReleaseAsset, file *os.File, meter *downloadMeter) (downloadPath, error) {
+	type downloadStep struct {
+		path     downloadPath
+		download func() error
+	}
+
+	steps := []downloadStep{
+		{downloadPathMultiSource, func() error {
+			return c.downloadRanged(ctx, asset.DownloadURL, asset.Name, file, asset.Size, meter.set)
+		}},
+		{downloadPathProxySingle, func() error {
+			_, err := c.downloadSingle(ctx, asset, file, meter)
+			return err
+		}},
+	}
+
+	failures := make([]error, 0, len(steps))
+	for _, step := range steps {
+		if err := resetDownloadFile(file); err != nil {
+			return step.path, err
+		}
+		started := time.Now()
+		err := step.download()
+		if err == nil {
+			return step.path, nil
+		}
+		logDownloadFailure(step.path, asset.Name, time.Since(started), meter.bytesValue(), err)
+		failures = append(failures, fmt.Errorf("%s: %w", step.path, err))
+		if ctx.Err() != nil {
+			return step.path, ctx.Err()
+		}
+	}
+	return steps[len(steps)-1].path, errors.Join(failures...)
+}
+
+func (c *ReleaseClient) downloadSingle(ctx context.Context, asset ReleaseAsset, file *os.File, meter *downloadMeter) (int64, error) {
+	var lastErr error
+	for attempt := 1; attempt <= downloadAttempts; attempt++ {
+		if err := resetDownloadFile(file); err != nil {
+			return meter.bytesValue(), err
+		}
+		started := time.Now()
+		written, err := c.streamTo(ctx, c.http, asset.DownloadURL, asset, file, meter.set)
+		if err == nil {
+			return written, nil
+		}
+		lastErr = err
+		logDownloadFailure(downloadPathProxySingle, asset.Name, time.Since(started), written, err,
+			"attempt", attempt)
+		if attempt == downloadAttempts {
+			break
+		}
+		if err := waitToRetry(ctx, c.retryDelay(attempt)); err != nil {
+			return written, err
+		}
+	}
+	return meter.bytesValue(), lastErr
+}
+
+func resetDownloadFile(file *os.File) error {
 	if err := file.Truncate(0); err != nil {
 		return err
 	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.DownloadURL, nil)
-	if err != nil {
-		return err
-	}
-	response, err := c.http.Do(request)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
-		return fmt.Errorf("下载返回 %d", response.StatusCode)
-	}
-	if asset.Size > 0 && response.ContentLength >= 0 && response.ContentLength != asset.Size {
-		return fmt.Errorf("Content-Length %d 与数据包大小 %d 不一致", response.ContentLength, asset.Size)
-	}
-
-	var written int64
-	if progress == nil {
-		written, err = io.Copy(file, response.Body)
-	} else {
-		counter := &progressWriter{report: progress}
-		written, err = io.Copy(io.MultiWriter(file, counter), response.Body)
-	}
-	if err != nil {
-		return err
-	}
-	if response.ContentLength >= 0 && written != response.ContentLength {
-		return fmt.Errorf("下载 %d 字节，Content-Length 为 %d", written, response.ContentLength)
-	}
-	if asset.Size > 0 && written != asset.Size {
-		return fmt.Errorf("下载 %d 字节，数据包大小为 %d", written, asset.Size)
-	}
-	return nil
+	_, err := file.Seek(0, io.SeekStart)
+	return err
 }
 
-type progressWriter struct {
-	report  func(int64)
-	written int64
+func waitToRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
-func (writer *progressWriter) Write(data []byte) (int, error) {
-	writer.written += int64(len(data))
-	writer.report(writer.written)
-	return len(data), nil
+var errDownloadIdleTimeout = errors.New("下载读取空闲超时")
+
+func newDownloadRequestContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelCauseFunc, *time.Timer) {
+	requestCtx, cancel := context.WithCancelCause(ctx)
+	timer := time.AfterFunc(timeout, func() { cancel(errDownloadIdleTimeout) })
+	return requestCtx, cancel, timer
+}
+
+func downloadRequestError(ctx context.Context, err error) error {
+	if errors.Is(context.Cause(ctx), errDownloadIdleTimeout) {
+		return errDownloadIdleTimeout
+	}
+	return err
+}
+
+type downloadPath string
+
+type downloadMeter struct {
+	mu     sync.Mutex
+	report func(int64)
+	bytes  int64
+}
+
+func (meter *downloadMeter) set(bytes int64) {
+	meter.mu.Lock()
+	defer meter.mu.Unlock()
+	if bytes <= meter.bytes {
+		return
+	}
+	meter.bytes = bytes
+	if meter.report != nil {
+		meter.report(bytes)
+	}
+}
+
+func (meter *downloadMeter) bytesValue() int64 {
+	meter.mu.Lock()
+	defer meter.mu.Unlock()
+	return meter.bytes
+}
+
+func logDownloadFailure(path downloadPath, packageName string, duration time.Duration, downloaded int64, err error, extra ...any) {
+	attrs := []any{
+		"path", string(path),
+		"package", packageName,
+		"duration", duration,
+		"downloaded_bytes", downloaded,
+		"error", err,
+	}
+	slog.Warn("avdb asset download failed", append(attrs, extra...)...)
+}
+
+func logDownloadThroughput(packageName string, path downloadPath, downloaded int64, duration time.Duration) {
+	bytesPerSecond := float64(downloaded)
+	if duration > 0 {
+		bytesPerSecond /= duration.Seconds()
+	}
+	attrs := []any{
+		"total_bytes", downloaded,
+		"duration", duration,
+		"average_kbps", fmt.Sprintf("%.1f KB/s", bytesPerSecond/1024),
+		"path", string(path),
+		"package", packageName,
+	}
+	if bytesPerSecond < 200*1024 {
+		slog.Warn("avdb sync throughput", attrs...)
+		return
+	}
+	slog.Info("avdb sync throughput", attrs...)
 }

@@ -1,6 +1,7 @@
 package avdb
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -142,9 +143,18 @@ func TestResolveLatestReportsBothSourcesUnavailable(t *testing.T) {
 func TestDownloadAssetRetriesAndReportsAbsoluteProgress(t *testing.T) {
 	attempts := 0
 	lastProgress := int64(0)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		attempts++
+		if request.Header.Get("Range") == "" {
+			t.Fatal("single fallback must be used only after chunk downloads")
+		}
+		start, end, err := parseRangeHeader(request.Header.Get("Range"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		w.Header().Set("Content-Length", "4")
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/4", start, end))
+		w.WriteHeader(http.StatusPartialContent)
 		if attempts == 1 {
 			_, _ = io.WriteString(w, "ab")
 			return
