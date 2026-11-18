@@ -16,6 +16,8 @@ import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useSettingsStore } from '@/stores/settings'
+import { ImageIcon } from 'lucide-react'
 
 const PAGE_SIZE = 40
 
@@ -96,6 +98,7 @@ function ResourceActions({
  */
 export function ResourcesContent() {
   const queryClient = useQueryClient()
+  const nsfwMode = useSettingsStore(state => state.nsfwMode)
   const sections = useAvdbSections()
   const [activeSection, setActiveSection] = useState<string | undefined>(undefined)
   const [keyword, setKeyword] = useState('')
@@ -266,15 +269,24 @@ export function ResourcesContent() {
         <div className="flex flex-col divide-y rounded-xl border">
           {resources.data.items.map(item => (
             <div key={item.tid} className="flex items-start gap-3 px-3 py-2.5">
-              <img
-                src={avdbImageURL(resourceImage(item))}
-                alt=""
-                loading="lazy"
-                onError={event => {
-                  event.currentTarget.style.visibility = 'hidden'
-                }}
-                className="h-16 w-24 shrink-0 rounded-md bg-muted object-cover sm:h-20 sm:w-32"
-              />
+              {nsfwMode ? (
+                <div
+                  className="flex h-16 w-24 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground sm:h-20 sm:w-32"
+                  title="封面隐私模式已开启"
+                >
+                  <ImageIcon className="size-5" />
+                </div>
+              ) : (
+                <img
+                  src={avdbImageURL(resourceImage(item))}
+                  alt=""
+                  loading="lazy"
+                  onError={event => {
+                    event.currentTarget.style.visibility = 'hidden'
+                  }}
+                  className="h-16 w-24 shrink-0 rounded-md bg-muted object-cover sm:h-20 sm:w-32"
+                />
+              )}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="whitespace-nowrap font-mono text-sm font-medium">
