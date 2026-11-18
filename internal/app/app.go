@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -194,6 +195,17 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	if resourceErr != nil {
 		logger.Warn("avdb resource library unavailable", "error", resourceErr)
 	}
+	var resourceSync api.ResourceSyncManager
+	if resourceErr == nil {
+		resourceSync = avdb.NewSyncService(avdb.SyncDependencies{
+			Importer: resourceStore,
+			State:    resourceStore,
+			Releases: avdb.NewReleaseClient(avdb.ReleaseClientOptions{
+				Proxy:       networkSvc.ProxyManager(),
+				GitHubToken: os.Getenv("GITHUB_TOKEN"),
+			}),
+		}, avdb.SyncOptions{})
+	}
 
 	router := api.NewRouter(api.Dependencies{
 		Logger:         logger,
@@ -212,6 +224,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Emby:           embySvc,
 		Rankings:       api.NewRankingsSource(catalogueSvc, avdbClient, logger),
 		Resources:      resourceStore,
+		ResourceSync:   resourceSync,
 		Frontend:       miyabi.Frontend(),
 		STRMToken:      cfg.STRMToken,
 		TrustedProxies: cfg.TrustedProxies,

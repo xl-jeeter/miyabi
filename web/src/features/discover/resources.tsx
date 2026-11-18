@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import {
   avdbImageURL,
@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSettingsStore } from '@/stores/settings'
 import { ImageIcon } from 'lucide-react'
+import { LastAvdbSyncUpdate, ResourceOnlineSync } from './resource-online-sync'
 
 const PAGE_SIZE = 40
 
@@ -52,7 +53,7 @@ function ResourceActions({
       {item.magnet && (
         <a
           href={item.magnet}
-          className="whitespace-nowrap text-xs text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
+          className="text-xs whitespace-nowrap text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
           target="_blank"
           rel="noreferrer"
         >
@@ -62,7 +63,7 @@ function ResourceActions({
       {item.detail_url && (
         <a
           href={item.detail_url}
-          className="whitespace-nowrap text-xs text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
+          className="text-xs whitespace-nowrap text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
           target="_blank"
           rel="noreferrer"
         >
@@ -112,6 +113,10 @@ export function ResourcesContent() {
   const fileInput = useRef<HTMLInputElement>(null)
 
   const resources = useAvdbResources({ section: activeSection, q: search, page, limit: PAGE_SIZE })
+  const refreshAfterSync = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['avdb'] })
+    setPage(1)
+  }, [queryClient])
 
   const pickSection = (section?: string) => {
     setActiveSection(section)
@@ -139,6 +144,7 @@ export function ResourcesContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      <LastAvdbSyncUpdate />
       <div className="flex flex-wrap items-center gap-3">
         <Input
           value={keyword}
@@ -163,6 +169,7 @@ export function ResourcesContent() {
         </Button>
         <div className="ml-auto flex items-center gap-3">
           {importing && <span className="text-sm text-muted-foreground">正在导入…</span>}
+          <ResourceOnlineSync onCompleted={() => void refreshAfterSync()} />
           <Button onClick={() => fileInput.current?.click()} disabled={importing}>
             导入 AVDB 导出文件
           </Button>
@@ -224,7 +231,9 @@ export function ResourcesContent() {
                 ].join(' ')}
               >
                 <span className="text-sm font-medium opacity-80">{item.section}</span>
-                <span className="text-2xl font-semibold tabular-nums">{formatCount(item.count)}</span>
+                <span className="text-2xl font-semibold tabular-nums">
+                  {formatCount(item.count)}
+                </span>
                 {item.categories?.length ? (
                   <span className="line-clamp-1 text-xs opacity-60">
                     {item.categories
@@ -289,13 +298,13 @@ export function ResourcesContent() {
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="whitespace-nowrap font-mono text-sm font-medium">
+                  <span className="font-mono text-sm font-medium whitespace-nowrap">
                     {item.number || '—'}
                   </span>
-                  <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  <span className="text-xs whitespace-nowrap text-muted-foreground">
                     {item.publish_date?.slice(0, 10)}
                   </span>
-                  <span className="whitespace-nowrap rounded-md bg-muted px-1.5 py-0.5 text-xs">
+                  <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs whitespace-nowrap">
                     {item.section}
                   </span>
                 </div>

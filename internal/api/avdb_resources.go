@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ppxb/miyabi/internal/avdb"
-	"github.com/ppxb/miyabi/internal/netx"
 	"github.com/ppxb/miyabi/internal/domain"
+	"github.com/ppxb/miyabi/internal/netx"
 )
 
 // ResourceManager exposes the imported AVDB resource library.
@@ -24,6 +24,13 @@ type ResourceManager interface {
 	List(ctx context.Context, section, keyword string, page, limit int) ([]avdb.Resource, int64, error)
 	Get(ctx context.Context, tid int64) (avdb.Resource, error)
 	ImportZip(ctx context.Context, name string, body io.Reader) (avdb.ImportResult, error)
+}
+
+// ResourceSyncManager exposes online AVDB package synchronization.
+type ResourceSyncManager interface {
+	Start(ctx context.Context, request avdb.SyncRequest) (avdb.SyncJob, error)
+	Status(ctx context.Context) (avdb.SyncStatus, error)
+	Packages(ctx context.Context) ([]avdb.Package, error)
 }
 
 type resourceListQuery struct {
@@ -95,6 +102,47 @@ func avdbImportHandler(resources ResourceManager) gin.HandlerFunc {
 			return
 		}
 		respond(c, result, nil)
+	}
+}
+
+func avdbSyncHandler(sync ResourceSyncManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if sync == nil {
+			respond(c, nil, domain.E(domain.KindInvalid, "资源库未初始化", nil))
+			return
+		}
+		request, ok := bindJSON[avdb.SyncRequest](c)
+		if !ok {
+			return
+		}
+		job, err := sync.Start(c.Request.Context(), request)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
+		accepted(c, gin.H{"job_id": job.ID, "packages": job.Packages}, nil)
+	}
+}
+
+func avdbSyncStatusHandler(sync ResourceSyncManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if sync == nil {
+			respond(c, nil, domain.E(domain.KindInvalid, "资源库未初始化", nil))
+			return
+		}
+		status, err := sync.Status(c.Request.Context())
+		respond(c, status, err)
+	}
+}
+
+func avdbSyncPackagesHandler(sync ResourceSyncManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if sync == nil {
+			respond(c, nil, domain.E(domain.KindInvalid, "资源库未初始化", nil))
+			return
+		}
+		packages, err := sync.Packages(c.Request.Context())
+		respond(c, packages, err)
 	}
 }
 

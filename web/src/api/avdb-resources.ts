@@ -43,6 +43,53 @@ export type AvdbImportResult = {
   source: string
 }
 
+export type AvdbSyncSource = 'x1080x' | 'sehuatang' | 'LTX' | 'FTAV'
+export type AvdbSyncMode = 'full' | 'recent30d'
+
+export type AvdbSyncPackage = {
+  source: AvdbSyncSource
+  mode: AvdbSyncMode
+  name: string
+  size: number
+  download_url: string
+  timestamp: string
+  rows?: number
+}
+
+export type AvdbSyncState = {
+  source: AvdbSyncSource
+  mode: AvdbSyncMode
+  package: string
+  imported: number
+  total: number
+  synced_at: string
+}
+
+export type AvdbSyncStatus = {
+  running: boolean
+  current: string
+  source?: AvdbSyncSource
+  bytes: number
+  total_bytes?: number
+  phase?: 'downloading' | 'importing' | 'imported'
+  imported?: number
+  rows?: number
+  last: AvdbSyncState[]
+  result?: {
+    job_id: string
+    packages: AvdbSyncPackage[]
+    imported: number
+    total: number
+    completed_at: string
+  }
+  last_error?: string
+}
+
+export type AvdbSyncRequest = {
+  sources: AvdbSyncSource[]
+  mode: AvdbSyncMode
+}
+
 export function useAvdbSections() {
   return useQuery({
     queryKey: ['avdb', 'sections'],
@@ -81,12 +128,43 @@ export async function importAvdbExport(file: File): Promise<AvdbImportResult> {
   const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const message =
-      payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      typeof payload.error === 'string'
         ? payload.error
         : `导入失败（HTTP ${response.status}）`
     throw new Error(message)
   }
   return payload as AvdbImportResult
+}
+
+export function startAvdbSync(request: AvdbSyncRequest) {
+  return apiPost<{ job_id: string; packages: AvdbSyncPackage[] }>('/api/avdb/library/sync', request)
+}
+
+export function getAvdbSyncStatus(signal?: AbortSignal) {
+  return apiGet<AvdbSyncStatus>('/api/avdb/library/sync/status', undefined, signal)
+}
+
+export function useAvdbSyncStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['avdb', 'sync', 'status'],
+    queryFn: ({ signal }) => getAvdbSyncStatus(signal),
+    enabled,
+    refetchInterval: query => (query.state.data?.running ? 750 : false),
+    staleTime: 0
+  })
+}
+
+export function useAvdbSyncPackages(enabled = true) {
+  return useQuery({
+    queryKey: ['avdb', 'sync', 'packages'],
+    queryFn: ({ signal }) =>
+      apiGet<AvdbSyncPackage[]>('/api/avdb/library/sync/packages', undefined, signal),
+    enabled,
+    staleTime: 60_000
+  })
 }
 
 /** 取资源的第一张预览图（AVDB 的 preview_images 可能是 JSON 数组，也可能是逗号分隔的多个 URL）。 */

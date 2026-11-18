@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,10 +39,10 @@ type Resource struct {
 // SectionSummary mirrors AVDB's category cards: one entry per section with a
 // total count and the per-category breakdown.
 type SectionSummary struct {
-	Section    string           `json:"section"`
-	Count      int64            `json:"count"`
-	Categories []CategoryCount  `json:"categories"`
-	Sample     string           `json:"sample,omitempty"`
+	Section    string          `json:"section"`
+	Count      int64           `json:"count"`
+	Categories []CategoryCount `json:"categories"`
+	Sample     string          `json:"sample,omitempty"`
 }
 
 // CategoryCount is the per-category tally inside a section.
@@ -84,6 +85,14 @@ CREATE TABLE IF NOT EXISTS avdb_resource (
 CREATE INDEX IF NOT EXISTS idx_avdb_resource_section ON avdb_resource(section);
 CREATE INDEX IF NOT EXISTS idx_avdb_resource_number ON avdb_resource(number);
 CREATE INDEX IF NOT EXISTS idx_avdb_resource_title ON avdb_resource(title);
+CREATE TABLE IF NOT EXISTS avdb_sync_state (
+	source     TEXT PRIMARY KEY,
+	mode       TEXT NOT NULL DEFAULT '',
+	package    TEXT NOT NULL DEFAULT '',
+	imported   INTEGER NOT NULL DEFAULT 0,
+	total      INTEGER NOT NULL DEFAULT 0,
+	synced_at  TEXT NOT NULL DEFAULT ''
+);
 `
 
 // OpenResourceStore opens (and creates) the resource database.
@@ -124,10 +133,11 @@ func (s *ResourceStore) empty(ctx context.Context) bool {
 // ImportZip accepts an AVDB export (.zip containing one CSV) or a bare CSV and
 // upserts every row by tid. Rows without a tid are skipped.
 func (s *ResourceStore) ImportZip(ctx context.Context, name string, body io.Reader) (ImportResult, error) {
-	reader, source, err := csvReaderFrom(name, body)
+	input, err := csvReaderFrom(name, body)
 	if err != nil {
 		return ImportResult{}, err
 	}
+	defer input.close()
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -144,11 +154,11 @@ func (s *ResourceStore) ImportZip(ctx context.Context, name string, body io.Read
 	defer func() { _ = stmt.Close() }()
 
 	var result ImportResult
-	result.Source = source
+	result.Source = input.source
 	index := map[string]int{}
 	batch := 0
 	for {
-		record, err := reader.Read()
+		record, err := input.reader.Read()
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -298,16 +308,18 @@ func (s *ResourceStore) List(ctx context.Context, section, keyword string, page,
 	return items, total, rows.Err()
 }
 
-func csvReaderFrom(name string, body io.Reader) (*csv.Reader, string, error) {
+type csvInput struct {
+	reader *csv.Reader
+	source string
+	close  func() error
+}
+
+func csvReaderFrom(name string, body io.Reader) (csvInput, error) {
 	lower := strings.ToLower(name)
 	if strings.HasSuffix(lower, ".zip") {
-		buffered, err := io.ReadAll(body)
+		archive, closeArchive, err := zipReaderFrom(body)
 		if err != nil {
-			return nil, "", domain.E(domain.KindInvalid, "读取上传文件失败", err)
-		}
-		archive, err := zip.NewReader(bytes.NewReader(buffered), int64(len(buffered)))
-		if err != nil {
-			return nil, "", domain.E(domain.KindInvalid, "ZIP 解析失败", err)
+			return csvInput{}, err
 		}
 		for _, file := range archive.File {
 			if !strings.HasSuffix(strings.ToLower(file.Name), ".csv") {
@@ -315,13 +327,46 @@ func csvReaderFrom(name string, body io.Reader) (*csv.Reader, string, error) {
 			}
 			handle, err := file.Open()
 			if err != nil {
-				return nil, "", domain.E(domain.KindInvalid, "打开 CSV 失败", err)
+				_ = closeArchive()
+				return csvInput{}, domain.E(domain.KindInvalid, "打开 CSV 失败", err)
 			}
-			return newCSVReader(handle), file.Name, nil
+			return csvInput{
+				reader: newCSVReader(handle),
+				source: file.Name,
+				close:  func() error { return errors.Join(handle.Close(), closeArchive()) },
+			}, nil
 		}
-		return nil, "", domain.E(domain.KindInvalid, "压缩包里没有 CSV", nil)
+		_ = closeArchive()
+		return csvInput{}, domain.E(domain.KindInvalid, "压缩包里没有 CSV", nil)
 	}
-	return newCSVReader(body), name, nil
+	return csvInput{reader: newCSVReader(body), source: name, close: func() error { return nil }}, nil
+}
+
+func zipReaderFrom(body io.Reader) (*zip.Reader, func() error, error) {
+	if source, ok := body.(interface {
+		io.ReaderAt
+		Stat() (fs.FileInfo, error)
+	}); ok {
+		info, err := source.Stat()
+		if err != nil {
+			return nil, nil, domain.E(domain.KindInvalid, "读取上传文件失败", err)
+		}
+		archive, err := zip.NewReader(source, info.Size())
+		if err != nil {
+			return nil, nil, domain.E(domain.KindInvalid, "ZIP 解析失败", err)
+		}
+		return archive, func() error { return nil }, nil
+	}
+
+	buffered, err := io.ReadAll(body)
+	if err != nil {
+		return nil, nil, domain.E(domain.KindInvalid, "读取上传文件失败", err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(buffered), int64(len(buffered)))
+	if err != nil {
+		return nil, nil, domain.E(domain.KindInvalid, "ZIP 解析失败", err)
+	}
+	return archive, func() error { return nil }, nil
 }
 
 func newCSVReader(r io.Reader) *csv.Reader {
@@ -401,4 +446,40 @@ func (s *ResourceStore) Count(ctx context.Context) (int64, error) {
 	var n int64
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM avdb_resource`).Scan(&n)
 	return n, err
+}
+
+// SaveSyncState records the latest successfully imported package per source.
+func (s *ResourceStore) SaveSyncState(ctx context.Context, state SyncState) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO avdb_sync_state
+		(source, mode, package, imported, total, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(source) DO UPDATE SET
+			mode = excluded.mode,
+			package = excluded.package,
+			imported = excluded.imported,
+			total = excluded.total,
+			synced_at = excluded.synced_at`,
+		state.Source, state.Mode, state.Package, state.Imported, state.Total, state.SyncedAt)
+	return err
+}
+
+// ListSyncStates returns persisted synchronization results, newest first.
+func (s *ResourceStore) ListSyncStates(ctx context.Context) ([]SyncState, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT source, mode, package, imported, total, synced_at
+		FROM avdb_sync_state ORDER BY synced_at DESC, source`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	states := make([]SyncState, 0, 4)
+	for rows.Next() {
+		var state SyncState
+		if err := rows.Scan(&state.Source, &state.Mode, &state.Package,
+			&state.Imported, &state.Total, &state.SyncedAt); err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return states, rows.Err()
 }

@@ -31,6 +31,7 @@ type Dependencies struct {
 	Emby           EmbyManager
 	Rankings       RankingsSource
 	Resources      ResourceManager
+	ResourceSync   ResourceSyncManager
 	Frontend       fs.FS
 	STRMToken      string
 	TrustedProxies []string
@@ -128,6 +129,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	resourcesAPI.GET("/sections", avdbSectionsHandler(deps.Resources))
 	resourcesAPI.GET("/resources", avdbResourcesHandler(deps.Resources))
 	resourcesAPI.POST("/import", avdbImportHandler(deps.Resources))
+	resourcesAPI.POST("/library/sync", avdbSyncHandler(deps.ResourceSync))
+	resourcesAPI.GET("/library/sync/status", avdbSyncStatusHandler(deps.ResourceSync))
+	resourcesAPI.GET("/library/sync/packages", avdbSyncPackagesHandler(deps.ResourceSync))
 	resourcesAPI.POST("/resources/:tid/offline", avdbResourceOfflineHandler(deps.Resources, deps.Offline))
 	resourcesAPI.GET("/image", avdbResourceImageHandler(deps.Network))
 	protected.GET("/discover/movies/:id", discoverMovieHandler(deps.Catalogue))
