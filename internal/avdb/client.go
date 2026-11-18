@@ -85,7 +85,7 @@ func (c *Client) Rankings(ctx context.Context, period string, kind int) ([]domai
 		kind = 0
 	}
 
-	cacheKey := fmt.Sprintf("%s|%d", normalized, kind)
+	cacheKey := fmt.Sprintf("avdb|%s|%d", normalized, kind)
 	if movies, hit := c.fromCache(cacheKey); hit {
 		return movies, nil
 	}

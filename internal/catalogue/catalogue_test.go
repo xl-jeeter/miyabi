@@ -242,6 +242,9 @@ func (s *stubProviderWithMagnets) Search(context.Context, string, domain.SearchO
 func (s *stubProviderWithMagnets) Browse(context.Context, domain.BrowseOptions) ([]domain.Movie, error) {
 	return s.movies, nil
 }
+func (s *stubProviderWithMagnets) Rankings(context.Context, string, int) ([]domain.Movie, error) {
+	return s.movies, nil
+}
 func (s *stubProviderWithMagnets) MovieDetail(context.Context, string) (domain.MovieDetail, error) {
 	return domain.MovieDetail{Movie: domain.Movie{ID: "movie-1", Code: "SSIS-001"}}, nil
 }

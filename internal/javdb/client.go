@@ -34,6 +34,8 @@ type jsonTransport interface {
 type Client struct {
 	options       Options
 	limiter       *rate.Limiter
+	rankingsMu    sync.Mutex
+	rankingsCache map[string]cachedRankings
 	cooldownMu    sync.Mutex
 	cooldownUntil time.Time
 	media         *resty.Client

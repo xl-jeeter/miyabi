@@ -246,6 +246,11 @@ func (catalogue *fakeCatalogue) Browse(context.Context, domain.BrowseOptions) ([
 	return nil, fmt.Errorf("browse is not part of this fixture")
 }
 
+func (catalogue *fakeCatalogue) Rankings(context.Context, string, int) ([]domain.Movie, error) {
+	catalogue.count("rankings")
+	return nil, fmt.Errorf("rankings is not part of this fixture")
+}
+
 func (catalogue *fakeCatalogue) MovieDetail(_ context.Context, id string) (domain.MovieDetail, error) {
 	catalogue.count("detail")
 	detail, ok := catalogue.details[id]

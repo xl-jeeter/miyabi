@@ -194,6 +194,11 @@ func (service *Service) Browse(
 	return projectMovies(ctx, movies), nil
 }
 
+// Rankings returns raw catalogue movies for the discovery rankings endpoint.
+func (service *Service) Rankings(ctx context.Context, period string, kind int) ([]domain.Movie, error) {
+	return service.javdb.Rankings(ctx, period, kind)
+}
+
 func (service *Service) CatalogueDetail(ctx context.Context, movieID string) (domain.MovieDetail, error) {
 	return cachedJavDB(ctx, service, service.details, movieID, func(ctx context.Context) (domain.MovieDetail, error) {
 		detail, err := service.movieDetail(ctx, movieID)

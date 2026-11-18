@@ -210,7 +210,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Maintenance:    maintenanceSvc,
 		Network:        networkSvc,
 		Emby:           embySvc,
-		Rankings:       avdbClient,
+		Rankings:       api.NewRankingsSource(catalogueSvc, avdbClient, logger),
 		Resources:      resourceStore,
 		Frontend:       miyabi.Frontend(),
 		STRMToken:      cfg.STRMToken,
