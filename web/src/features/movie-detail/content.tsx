@@ -1,4 +1,5 @@
 import { useRecordMovieView } from '@/api/browse-history'
+import { ApiError, describeApiError } from '@/api/client'
 import { useDiscoverMagnets, useDiscoverMovie, useResolveDiscoverMovie } from '@/api/discover'
 import { useLibraryMovie } from '@/api/library'
 import { ErrorState, InlineError } from '@/components/error-state'
@@ -69,7 +70,11 @@ function MovieDetailByCode({ code }: { code: string }) {
   if (!identity.data) {
     return (
       <ErrorState
-        message={`未能从 JavDB 确认 ${code} 的影片详情`}
+        message={
+          identity.error instanceof ApiError
+            ? describeApiError(identity.error)
+            : `未能从 JavDB 确认 ${code} 的影片详情`
+        }
         onRetry={() => void identity.refetch()}
         retrying={identity.isFetching}
       />
@@ -87,7 +92,9 @@ function IdentifiedMovieDetail({ movieId }: { movieId: string }) {
   if (!detail.data) {
     return (
       <ErrorState
-        message="影片详情加载失败"
+        message={
+          detail.error instanceof ApiError ? describeApiError(detail.error) : '影片详情加载失败'
+        }
         onRetry={() => void detail.refetch()}
         retrying={detail.isFetching}
       />

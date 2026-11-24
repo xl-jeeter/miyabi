@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -20,6 +21,9 @@ type retryTransport func() error
 
 func (f retryTransport) getJSON(context.Context, string, url.Values, any) error { return f() }
 func (retryTransport) closeIdleConnections()                                    {}
+func (retryTransport) postRaw(context.Context, string, url.Values) ([]byte, error) {
+	return nil, errors.New("unexpected POST")
+}
 
 func TestRetryAfterFormats(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
@@ -144,12 +148,12 @@ func TestClientRechecksCooldownAfterWaitingForRateToken(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		client := &Client{limiter: rate.NewLimiter(rate.Every(time.Second), 1)}
 		calls := make(chan time.Time, 4)
-		count := 0
+		var count atomic.Int32
 		start := time.Now()
 		client.current.Store(&routeState{transport: retryTransport(func() error {
-			count++
+			current := count.Add(1)
 			calls <- time.Now()
-			if count == 1 {
+			if current == 1 {
 				time.Sleep(100 * time.Millisecond)
 				return &HTTPError{StatusCode: 429, RetryAfter: 10 * time.Second}
 			}

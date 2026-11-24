@@ -29,6 +29,7 @@ type Dependencies struct {
 	Maintenance    MaintenanceManager
 	Network        NetworkManager
 	Emby           EmbyManager
+	JavDBAccount   JavDBAccountManager
 	Rankings       RankingsSource
 	Resources      ResourceManager
 	ResourceSync   ResourceSyncManager
@@ -89,6 +90,11 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	settingsAPI.POST("/emby/test", embyTestHandler(deps.Emby))
 	settingsAPI.GET("/subscription", subscriptionSettingsGetHandler(deps.Monitor))
 	settingsAPI.PUT("/subscription", subscriptionSettingsUpdateHandler(deps.Monitor))
+
+	javdbAPI := protected.Group("/javdb", noStore())
+	javdbAPI.GET("/account", javdbAccountHandler(deps.JavDBAccount))
+	javdbAPI.POST("/account/login", javdbLoginHandler(deps.JavDBAccount))
+	javdbAPI.POST("/account/logout", javdbLogoutHandler(deps.JavDBAccount))
 
 	protected.GET("/library/movies", libraryMoviesHandler(deps.Library))
 	protected.GET("/library/movies/:id", libraryMovieHandler(deps.Library))

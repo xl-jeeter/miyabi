@@ -222,6 +222,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Maintenance:    maintenanceSvc,
 		Network:        networkSvc,
 		Emby:           embySvc,
+		JavDBAccount:   catalogueSvc,
 		Rankings:       api.NewRankingsSource(catalogueSvc, avdbClient, logger),
 		Resources:      resourceStore,
 		ResourceSync:   resourceSync,

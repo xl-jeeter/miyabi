@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,28 +28,30 @@ type routeState struct {
 
 type jsonTransport interface {
 	getJSON(context.Context, string, url.Values, any) error
+	postRaw(context.Context, string, url.Values) ([]byte, error)
 	closeIdleConnections()
 }
 
 // Client is the anonymous JavDB App API client.
 type Client struct {
-	options       Options
-	limiter       *rate.Limiter
-	rankingsMu    sync.Mutex
-	rankingsCache map[string]cachedRankings
-	cooldownMu    sync.Mutex
-	cooldownUntil time.Time
-	media         *resty.Client
-	current       atomic.Pointer[routeState]
-	lastProbe     atomic.Pointer[[]RouteCandidate]
-	routes        singleflight.Group
-	selectionMu   sync.Mutex
-	routeContext  context.Context
-	stopRoutes    context.CancelFunc
-	selector      func(context.Context, routeSelection) (*routeState, error)
-	fingerprint   *netx.ProxiedFingerprintClient
-	tokenValue    atomic.Pointer[string]
-	loginMu       sync.Mutex
+	options          Options
+	limiter          *rate.Limiter
+	rankingsMu       sync.Mutex
+	rankingsCache    map[string]cachedRankings
+	cooldownMu       sync.Mutex
+	cooldownUntil    time.Time
+	media            *resty.Client
+	current          atomic.Pointer[routeState]
+	lastProbe        atomic.Pointer[[]RouteCandidate]
+	routes           singleflight.Group
+	selectionMu      sync.Mutex
+	routeContext     context.Context
+	stopRoutes       context.CancelFunc
+	selector         func(context.Context, routeSelection) (*routeState, error)
+	fingerprint      *netx.ProxiedFingerprintClient
+	tokenValue       atomic.Pointer[string]
+	credentialsValue atomic.Pointer[accountCredentials]
+	loginMu          sync.Mutex
 }
 
 func New(options Options) (*Client, error) {
@@ -80,6 +83,9 @@ func New(options Options) (*Client, error) {
 	}
 	client.options.Token = client.authToken
 	client.selector = client.selectAndInstall
+	if username := strings.TrimSpace(options.Username); username != "" && options.Password != "" {
+		client.credentialsValue.Store(&accountCredentials{Username: username, Password: options.Password})
+	}
 	if options.Proxy != nil {
 		go client.watchProxy()
 	}
@@ -250,7 +256,8 @@ func (c *Client) getJSON(
 			reauthenticated = true
 			slog.InfoContext(ctx, "JavDB auth rejected, opening a session", "path", path)
 			if loginErr := c.refreshToken(ctx); loginErr != nil {
-				slog.WarnContext(ctx, "JavDB session login failed", "error", loginErr)
+				// Login errors may wrap a URL containing the account credentials.
+				slog.WarnContext(ctx, "JavDB session login failed")
 				return err
 			}
 			continue

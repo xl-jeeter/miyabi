@@ -1,3 +1,4 @@
+import { ApiError, describeApiError } from '@/api/client'
 import type { DiscoverMovie } from '@/api/discover'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
@@ -19,7 +20,7 @@ export function DiscoverResults({
   movies: DiscoverMovie[] | undefined
   loading: boolean
   fetching: boolean
-  error: boolean
+  error: unknown
   searching: boolean
   page: number
   onPageChange: (page: number) => void
@@ -28,7 +29,9 @@ export function DiscoverResults({
   if (error) {
     return (
       <ErrorState
-        message="数据加载失败，请检查网络或代理设置"
+        message={
+          error instanceof ApiError ? describeApiError(error) : '数据加载失败，请检查网络或代理设置'
+        }
         onRetry={onRetry}
         retrying={fetching}
       />

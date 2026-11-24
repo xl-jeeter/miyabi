@@ -32,6 +32,12 @@ type Options struct {
 	Token    func() string
 }
 
+// AccountStatus describes the account currently configured on the client.
+type AccountStatus struct {
+	LoggedIn bool   `json:"logged_in"`
+	Username string `json:"username"`
+}
+
 // RouteStatus describes the currently selected API route.
 type RouteStatus struct {
 	Host       string

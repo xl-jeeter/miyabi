@@ -4,7 +4,13 @@ import { test, onTestFinished, vi } from 'vitest'
 import { QueryObserver, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { ApiError, apiPost, describeApiError, isPanUnauthorized } from '@/api/client'
+import {
+  ApiError,
+  apiPost,
+  describeApiError,
+  isJavDBUnauthorized,
+  isPanUnauthorized
+} from '@/api/client'
 import { createAppQueryClient } from '@/api/query-client'
 import { panKeys } from '@/api/pan'
 import { libraryKeys } from '@/api/library'
@@ -55,6 +61,13 @@ test('API errors preserve business codes and distinguish app auth from 115 auth'
     'Session expired'
   )
   assert.equal(isPanUnauthorized(new ApiError('Unknown 401', 401)), false)
+})
+
+test('JavDB authorization errors keep business codes and show the login hint', () => {
+  const error = new ApiError('JavDB 登录已失效，请在设置中重新登录', 502, 'JAVDB_UNAUTHORIZED')
+  assert.equal(isJavDBUnauthorized(error), true)
+  assert.equal(isPanUnauthorized(error), false)
+  assert.equal(describeApiError(error), 'JavDB 登录已失效，请在设置中重新登录')
 })
 
 test('only account and source business errors invalidate related cached state', async () => {

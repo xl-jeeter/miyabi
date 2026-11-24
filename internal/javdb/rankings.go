@@ -88,3 +88,10 @@ func (c *Client) storeRankings(key string, movies []domain.Movie) {
 	}
 	c.rankingsCache[key] = cachedRankings{movies: movies, expires: time.Now().Add(rankingsCacheTTL)}
 }
+
+// clearRankingsCache drops account-scoped results after a credential change.
+func (c *Client) clearRankingsCache() {
+	c.rankingsMu.Lock()
+	defer c.rankingsMu.Unlock()
+	clear(c.rankingsCache)
+}

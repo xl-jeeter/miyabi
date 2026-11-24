@@ -71,6 +71,14 @@ type JavDBClient interface {
 	Route() (javdb.RouteStatus, bool)
 }
 
+// JavDBAccount manages the credentials used by the long-lived JavDB client.
+type JavDBAccount interface {
+	Account() javdb.AccountStatus
+	Authenticate(context.Context, string, string) (string, error)
+	SetCredentials(username, password, token string)
+	ClearCredentials()
+}
+
 // JavBusSource supplements magnets without providing catalogue metadata.
 type JavBusSource interface {
 	magnet.Source

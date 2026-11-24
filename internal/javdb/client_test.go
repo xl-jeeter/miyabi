@@ -34,6 +34,11 @@ func (transport *stubTransport) getJSON(
 
 func (*stubTransport) closeIdleConnections() {}
 
+func (transport *stubTransport) postRaw(context.Context, string, url.Values) ([]byte, error) {
+	transport.calls++
+	return nil, transport.err
+}
+
 func TestRouteProbeResultsRemainIndependentOfActiveSelection(t *testing.T) {
 	var responseCode atomic.Int32
 	responseCode.Store(http.StatusServiceUnavailable)

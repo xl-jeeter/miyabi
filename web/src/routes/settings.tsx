@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { AppearanceSection } from '@/features/settings/appearance-section'
 import { DataSection } from '@/features/settings/data-section'
 import { EmbySection } from '@/features/settings/emby-section'
+import { JavDBAccountSection } from '@/features/settings/javdb-account-section'
 import { NetworkSection } from '@/features/settings/network-section'
 import { PanSection } from '@/features/settings/pan-section'
 import { PrivacySection } from '@/features/settings/privacy-section'
@@ -32,6 +33,8 @@ function SettingsPage() {
           <NetworkSection />
           <Separator />
           <ScrapingSection />
+          <Separator />
+          <JavDBAccountSection />
           <Separator />
           <EmbySection />
           <Separator />

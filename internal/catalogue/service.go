@@ -18,9 +18,18 @@ import (
 )
 
 const (
-	javdbDeviceSetting = "javdb.device_uuid"
-	javdbRouteSetting  = "javdb.route"
+	javdbDeviceSetting  = "javdb.device_uuid"
+	javdbRouteSetting   = "javdb.route"
+	javdbAccountSetting = "javdb.account"
 )
+
+// persistedJavDBAccount stores the account used to open JavDB sessions. The
+// password is plain text because the database lives in the local /app/data
+// directory and the codebase has no credential encryption convention.
+type persistedJavDBAccount struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
 
 type persistedRoute struct {
 	Host      string `json:"host"`
@@ -32,6 +41,7 @@ type Service struct {
 	database     *ent.Client
 	local        LocalState
 	javdb        JavDBClient
+	javdbAccount JavDBAccount
 	javbus       JavBusSource
 	avdbFallback MovieDetailFallback
 	avdbSource   AVDBSource
@@ -46,6 +56,7 @@ type Service struct {
 	persistRouteMu sync.Mutex
 	// Used only to avoid redundant database writes; live state belongs to JavDB.
 	lastSavedRoute persistedRoute
+	accountMu      sync.Mutex
 }
 
 // New creates the lazy JavDB client and restores/persists device UUID and route settings.
@@ -76,19 +87,24 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+	account, err := loadJavDBAccount(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	client, err := javdb.New(javdb.Options{
 		DeviceUUID:    deviceUUID,
 		Proxy:         proxy,
 		CachedHost:    route.Host,
 		CachedLatency: time.Duration(route.LatencyMS) * time.Millisecond,
-		Username:      os.Getenv("MIYABI_JAVDB_USERNAME"),
-		Password:      os.Getenv("MIYABI_JAVDB_PASSWORD"),
+		Username:      account.Username,
+		Password:      account.Password,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	service := newService(db, client, supplement, local, route, avdbSources...)
+	service.javdbAccount = client
 	service.proxy = proxy
 	return service, nil
 }
@@ -107,7 +123,26 @@ func NewWithClients(
 	if err != nil {
 		return nil, err
 	}
-	return newService(db, primary, supplement, local, route, avdbSources...), nil
+	service := newService(db, primary, supplement, local, route, avdbSources...)
+	service.javdbAccount, _ = primary.(JavDBAccount)
+	return service, nil
+}
+
+func loadJavDBAccount(ctx context.Context, db *ent.Client) (persistedJavDBAccount, error) {
+	account, found, err := database.LoadSetting[persistedJavDBAccount](ctx, db, javdbAccountSetting)
+	if err != nil {
+		return persistedJavDBAccount{}, err
+	}
+	if found && strings.TrimSpace(account.Username) != "" && account.Password != "" {
+		account.Username = strings.TrimSpace(account.Username)
+		return account, nil
+	}
+	username := strings.TrimSpace(os.Getenv("MIYABI_JAVDB_USERNAME"))
+	password := os.Getenv("MIYABI_JAVDB_PASSWORD")
+	if username == "" || password == "" {
+		return persistedJavDBAccount{}, nil
+	}
+	return persistedJavDBAccount{Username: username, Password: password}, nil
 }
 
 // Response caches absorb repeated page loads; entries are small and short-lived

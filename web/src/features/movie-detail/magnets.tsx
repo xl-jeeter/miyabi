@@ -9,7 +9,7 @@ import {
 import { useState } from 'react'
 
 import type { DiscoverMagnet, useDiscoverMagnets } from '@/api/discover'
-import { describeApiError, isPanUnauthorized } from '@/api/client'
+import { ApiError, describeApiError, isPanUnauthorized } from '@/api/client'
 import {
   isOfflineTaskActive,
   useAddOffline,
@@ -86,7 +86,7 @@ export function MovieMagnets({
         <MovieMagnetsSkeleton />
       ) : query.isError ? (
         <InlineError onRetry={() => void query.refetch()} retrying={query.isFetching}>
-          磁力加载失败
+          {query.error instanceof ApiError ? describeApiError(query.error) : '磁力加载失败'}
         </InlineError>
       ) : query.data.length === 0 ? (
         <MovieSubscriptionAction movieID={movieID} />

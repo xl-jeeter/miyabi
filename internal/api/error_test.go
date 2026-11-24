@@ -67,6 +67,7 @@ func TestErrorMiddlewareMapsDomainErrorsToStatusAndMessage(t *testing.T) {
 
 		{name: "javdb api error", err: fmt.Errorf("get JavDB movie detail: %w", &javdb.APIError{Action: "movie", Message: "not found"}), status: http.StatusBadGateway, message: "JavDB 返回了错误：not found"},
 		{name: "javdb http error", err: fmt.Errorf("search JavDB: %w", &javdb.HTTPError{StatusCode: 503}), status: http.StatusBadGateway, message: "JavDB 服务异常（HTTP 503），请稍后重试"},
+		{name: "javdb session expired", err: fmt.Errorf("search JavDB: %w", &javdb.APIError{Action: "JWTVerificationError", Message: "expired"}), status: http.StatusUnauthorized, message: "JavDB 登录已失效，请在设置中重新登录", code: "JAVDB_UNAUTHORIZED"},
 		{name: "public message wins", err: fmt.Errorf("wrapped: %w", &publicError{message: "115 说明文案"}), status: http.StatusInternalServerError, message: "115 说明文案"},
 		{name: "unknown error masked", err: errors.New("UNIQUE constraint failed: movies.code"), status: http.StatusInternalServerError, message: "内部服务错误"},
 	} {

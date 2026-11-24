@@ -91,7 +91,7 @@ export function MetadataSearchPage({
         movies={movies.data}
         loading={movies.isPending}
         fetching={movies.isFetching}
-        error={movies.isError}
+        error={movies.error}
         searching
         page={search.page}
         onPageChange={onPageChange}

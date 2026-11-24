@@ -15,7 +15,7 @@ export function BrowseResults({
       movies={movies.data}
       loading={movies.isPending}
       fetching={movies.isFetching}
-      error={movies.isError}
+      error={movies.error}
       searching={false}
       page={params.page}
       onPageChange={onPageChange}

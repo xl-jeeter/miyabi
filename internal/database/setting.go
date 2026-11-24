@@ -39,3 +39,11 @@ func SaveSetting(ctx context.Context, client *ent.Client, key string, value any)
 	}
 	return nil
 }
+
+// DeleteSetting removes one settings row. A missing row is not an error.
+func DeleteSetting(ctx context.Context, client *ent.Client, key string) error {
+	if _, err := client.Setting.Delete().Where(setting.Key(key)).Exec(ctx); err != nil {
+		return fmt.Errorf("delete setting %s: %w", key, err)
+	}
+	return nil
+}

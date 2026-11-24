@@ -2,6 +2,7 @@ package javdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -492,6 +493,9 @@ func (transport *queryFixtureTransport) getJSON(
 }
 
 func (*queryFixtureTransport) closeIdleConnections() {}
+func (*queryFixtureTransport) postRaw(context.Context, string, url.Values) ([]byte, error) {
+	return nil, errors.New("unexpected POST")
+}
 
 func TestResolveMovieIDFallbackSearch(t *testing.T) {
 	// Simulate empty result when searching padded "ABC-00123", but succeeding

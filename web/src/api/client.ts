@@ -13,8 +13,13 @@ export function isPanUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'PAN_UNAUTHORIZED'
 }
 
+export function isJavDBUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'JAVDB_UNAUTHORIZED'
+}
+
 export function describeApiError(error: unknown): string {
   if (isPanUnauthorized(error)) return '115 登录已失效，请前往设置重新登录。'
+  if (isJavDBUnauthorized(error)) return 'JavDB 登录已失效，请在设置中重新登录'
   return error instanceof ApiError ? error.message : '请检查后端服务和网络后重试。'
 }
 
