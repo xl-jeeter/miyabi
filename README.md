@@ -1,5 +1,7 @@
 # Miyabi
 
+> 本仓库为个人修改版（Fork）：在原作者 [ppxb](https://github.com/ppxb/miyabi) 基础上添加了 AVDB 集成，并构建了 Docker Hub 镜像 `xilianghe/miyabi`。
+
 配合 115 网盘的一站式 Jav & Emby 管理平台。
 
 Miyabi 支持直接对接 115 进行刮削、订阅，也可由 Miyabi 作为底层服务，对 Emby 提供支持。
@@ -21,8 +23,11 @@ Miyabi 支持直接对接 115 进行刮削、订阅，也可由 Miyabi 作为底
 公开镜像：
 
 ```text
-ghcr.io/ppxb/miyabi
+xilianghe/miyabi      # 本仓库构建，含「AVDB 集成」功能（Docker Hub）
+ghcr.io/ppxb/miyabi   # 上游原版（不含 AVDB 集成）
 ```
+
+> 本仓库镜像标签：`latest`（最新）、`avdb`（AVDB 分支）、`avdb-YYYYMMDD`（按日期归档）。
 
 ### 1. 使用 Docker CLI 运行
 
@@ -37,7 +42,7 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e MIYABI_ACCESS_PASSWORD='change-this-password' \
   -e MIYABI_PUBLIC_URL='http://<宿主机IP>:8080' \
-  ghcr.io/ppxb/miyabi:latest
+  xilianghe/miyabi:latest
 ```
 
 > [!NOTE]
@@ -50,7 +55,7 @@ docker run -d \
 ```yaml
 services:
   miyabi:
-    image: ghcr.io/ppxb/miyabi:latest
+    image: xilianghe/miyabi:latest
     container_name: miyabi
     restart: unless-stopped
     security_opt:
@@ -89,7 +94,7 @@ docker logs -f miyabi
 升级时先拉取新镜像，再重新创建容器：
 
 ```bash
-docker pull ghcr.io/ppxb/miyabi:latest
+docker pull xilianghe/miyabi:latest
 docker stop miyabi
 docker rm miyabi
 ```
