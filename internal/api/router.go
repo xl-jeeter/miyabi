@@ -15,27 +15,29 @@ import (
 )
 
 type Dependencies struct {
-	Logger         *slog.Logger
-	Access         AccessGate
-	Catalogue      CatalogueManager
-	Metadata       MetadataManager
-	Drive          DriveManager
-	Offline        OfflineManager
-	Monitor        SubscriptionManager
-	Library        LibraryManager
-	STRM           STRMRelay
-	Tasks          TaskManager
-	Artwork        ArtworkReader
-	Maintenance    MaintenanceManager
-	Network        NetworkManager
-	Emby           EmbyManager
-	JavDBAccount   JavDBAccountManager
-	Rankings       RankingsSource
-	Resources      ResourceManager
-	ResourceSync   ResourceSyncManager
-	Frontend       fs.FS
-	STRMToken      string
-	TrustedProxies []string
+	Logger       *slog.Logger
+	Access       AccessGate
+	Catalogue    CatalogueManager
+	Metadata     MetadataManager
+	Drive        DriveManager
+	Offline      OfflineManager
+	Monitor      SubscriptionManager
+	Library      LibraryManager
+	STRM         STRMRelay
+	Tasks        TaskManager
+	Artwork      ArtworkReader
+	Maintenance  MaintenanceManager
+	Network      NetworkManager
+	Emby         EmbyManager
+	JavDBAccount JavDBAccountManager
+	Rankings     RankingsSource
+	Resources    ResourceManager
+	ResourceSync ResourceSyncManager
+	// ResourceAutoUpdate may be nil when the resource library failed to open.
+	ResourceAutoUpdate AutoUpdateManager
+	Frontend           fs.FS
+	STRMToken          string
+	TrustedProxies     []string
 }
 
 // NewRouter requires an Access gate, including when password protection is disabled.
@@ -138,6 +140,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	resourcesAPI.POST("/library/sync", avdbSyncHandler(deps.ResourceSync))
 	resourcesAPI.GET("/library/sync/status", avdbSyncStatusHandler(deps.ResourceSync))
 	resourcesAPI.GET("/library/sync/packages", avdbSyncPackagesHandler(deps.ResourceSync))
+	resourcesAPI.GET("/library/auto-update", avdbAutoUpdateStatusHandler(deps.ResourceAutoUpdate))
+	resourcesAPI.PUT("/library/auto-update", avdbAutoUpdateUpdateHandler(deps.ResourceAutoUpdate))
+	resourcesAPI.POST("/library/auto-update/run-now", avdbAutoUpdateRunNowHandler(deps.ResourceAutoUpdate))
 	resourcesAPI.POST("/resources/:tid/offline", avdbResourceOfflineHandler(deps.Resources, deps.Offline))
 	resourcesAPI.GET("/image", avdbResourceImageHandler(deps.Network))
 	protected.GET("/discover/movies/:id", discoverMovieHandler(deps.Catalogue))

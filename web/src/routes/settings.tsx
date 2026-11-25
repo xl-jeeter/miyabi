@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { AppearanceSection } from '@/features/settings/appearance-section'
+import { AvdbAutoUpdateSection } from '@/features/settings/avdb-auto-update-section'
 import { DataSection } from '@/features/settings/data-section'
 import { EmbySection } from '@/features/settings/emby-section'
 import { JavDBAccountSection } from '@/features/settings/javdb-account-section'
@@ -35,6 +36,8 @@ function SettingsPage() {
           <ScrapingSection />
           <Separator />
           <JavDBAccountSection />
+          <Separator />
+          <AvdbAutoUpdateSection />
           <Separator />
           <EmbySection />
           <Separator />

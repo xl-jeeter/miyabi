@@ -14,6 +14,7 @@ import (
 	"github.com/ppxb/miyabi"
 	"github.com/ppxb/miyabi/internal/api"
 	"github.com/ppxb/miyabi/internal/avdb"
+	"github.com/ppxb/miyabi/internal/avdb/autoupdate"
 	"github.com/ppxb/miyabi/internal/catalogue"
 	"github.com/ppxb/miyabi/internal/config"
 	"github.com/ppxb/miyabi/internal/database"
@@ -47,19 +48,20 @@ const (
 
 // App is the composition root assembling services, background workers, and the HTTP server.
 type App struct {
-	cfg       *config.Config
-	logger    *slog.Logger
-	store     *database.Store
-	server    *http.Server
-	pools     []*tasks.Pool
-	offline   *offline.Service
-	monitors  *monitor.Service
-	driveSvc  *drive.Drive
-	catalogue *catalogue.Service
-	scrape    *scrape.Service
-	metadata  *metadata.Service
-	embySvc   *emby.Service
-	resources *avdb.ResourceStore
+	cfg        *config.Config
+	logger     *slog.Logger
+	store      *database.Store
+	server     *http.Server
+	pools      []*tasks.Pool
+	offline    *offline.Service
+	monitors   *monitor.Service
+	driveSvc   *drive.Drive
+	catalogue  *catalogue.Service
+	scrape     *scrape.Service
+	metadata   *metadata.Service
+	embySvc    *emby.Service
+	resources  *avdb.ResourceStore
+	autoUpdate *autoupdate.Service
 }
 
 // New initializes all services, database connections, and registers task handlers.
@@ -195,7 +197,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	if resourceErr != nil {
 		logger.Warn("avdb resource library unavailable", "error", resourceErr)
 	}
-	var resourceSync api.ResourceSyncManager
+	var resourceSync *avdb.SyncService
+	var resourceAutoUpdate *autoupdate.Service
 	if resourceErr == nil {
 		resourceSync = avdb.NewSyncService(avdb.SyncDependencies{
 			Importer: resourceStore,
@@ -205,30 +208,32 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 				GitHubToken: os.Getenv("GITHUB_TOKEN"),
 			}),
 		}, avdb.SyncOptions{})
+		resourceAutoUpdate = autoupdate.New(store.Client, resourceSync, logger, nil)
 	}
 
 	router := api.NewRouter(api.Dependencies{
-		Logger:         logger,
-		Access:         api.NewAccessGateService(cfg.AccessPassword, cfg.JWTSecret),
-		Catalogue:      catalogueSvc,
-		Metadata:       metadataSvc,
-		Drive:          driveSvc,
-		Offline:        offlineSvc,
-		Monitor:        monitorSvc,
-		Library:        libSvc,
-		STRM:           strm.New(store.Client, driveSvc),
-		Tasks:          &taskViews{Service: taskSvc, database: store.Client, library: libSvc, monitor: monitorSvc},
-		Artwork:        scrapeSvc,
-		Maintenance:    maintenanceSvc,
-		Network:        networkSvc,
-		Emby:           embySvc,
-		JavDBAccount:   catalogueSvc,
-		Rankings:       api.NewRankingsSource(catalogueSvc, avdbClient, logger),
-		Resources:      resourceStore,
-		ResourceSync:   resourceSync,
-		Frontend:       miyabi.Frontend(),
-		STRMToken:      cfg.STRMToken,
-		TrustedProxies: cfg.TrustedProxies,
+		Logger:             logger,
+		Access:             api.NewAccessGateService(cfg.AccessPassword, cfg.JWTSecret),
+		Catalogue:          catalogueSvc,
+		Metadata:           metadataSvc,
+		Drive:              driveSvc,
+		Offline:            offlineSvc,
+		Monitor:            monitorSvc,
+		Library:            libSvc,
+		STRM:               strm.New(store.Client, driveSvc),
+		Tasks:              &taskViews{Service: taskSvc, database: store.Client, library: libSvc, monitor: monitorSvc},
+		Artwork:            scrapeSvc,
+		Maintenance:        maintenanceSvc,
+		Network:            networkSvc,
+		Emby:               embySvc,
+		JavDBAccount:       catalogueSvc,
+		Rankings:           api.NewRankingsSource(catalogueSvc, avdbClient, logger),
+		Resources:          resourceStore,
+		ResourceSync:       resourceSync,
+		ResourceAutoUpdate: resourceAutoUpdate,
+		Frontend:           miyabi.Frontend(),
+		STRMToken:          cfg.STRMToken,
+		TrustedProxies:     cfg.TrustedProxies,
 	})
 
 	server := &http.Server{
@@ -239,19 +244,20 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	}
 
 	return &App{
-		cfg:       cfg,
-		logger:    logger,
-		store:     store,
-		server:    server,
-		pools:     pools,
-		offline:   offlineSvc,
-		monitors:  monitorSvc,
-		driveSvc:  driveSvc,
-		catalogue: catalogueSvc,
-		scrape:    scrapeSvc,
-		metadata:  metadataSvc,
-		embySvc:   embySvc,
-		resources: resourceStore,
+		cfg:        cfg,
+		logger:     logger,
+		store:      store,
+		server:     server,
+		pools:      pools,
+		offline:    offlineSvc,
+		monitors:   monitorSvc,
+		driveSvc:   driveSvc,
+		catalogue:  catalogueSvc,
+		scrape:     scrapeSvc,
+		metadata:   metadataSvc,
+		embySvc:    embySvc,
+		resources:  resourceStore,
+		autoUpdate: resourceAutoUpdate,
 	}, nil
 }
 
@@ -276,6 +282,12 @@ func (a *App) Run(ctx context.Context) error {
 	workers.Go(func() {
 		tasks.RunPeriodic(ctx, a.logger, "monitor", monitorCheckInterval, a.monitors.Pending(), a.monitors.Check)
 	})
+	if a.autoUpdate != nil {
+		workers.Go(func() {
+			tasks.RunPeriodic(ctx, a.logger, "avdb auto update", autoupdate.TickInterval,
+				a.autoUpdate.Wake(), a.autoUpdate.Tick)
+		})
+	}
 
 	serverError := make(chan error, 1)
 	go func() {

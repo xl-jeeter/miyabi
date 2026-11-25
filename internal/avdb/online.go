@@ -337,6 +337,12 @@ func normalizeSource(value string) (string, bool) {
 	}
 }
 
+// ValidSource reports whether value names a recognized data source.
+func ValidSource(value string) bool {
+	_, ok := normalizeSource(value)
+	return ok
+}
+
 // DownloadAsset downloads one release asset and validates it against the size
 // advertised by the release API.
 func (c *ReleaseClient) DownloadAsset(ctx context.Context, asset ReleaseAsset, file *os.File, progress func(int64)) error {
