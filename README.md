@@ -176,6 +176,8 @@ Miyabi 的「发现」页可以额外接入自建的 [AVDB](https://github.com/l
 
 本项目参考了以下项目的部分实现，在此表示衷心的感谢！
 
+- [miyabi](https://github.com/ppxb/miyabi) —— 本仓库的上游源库，本 Fork 的所有功能（包括 AVDB 集成、资源库自动更新）均基于其开发
+- [avdb](https://github.com/leolitaly/avdb) —— 「资源库自动更新」的调度行为与站点配置设计参考自此项目
 - [javdb-cli](https://github.com/FlanChanXwO/javdb-cli)
 
 同时感谢社区 [LinuxDO](https://linux.do) 的帮助。
