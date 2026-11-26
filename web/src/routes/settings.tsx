@@ -11,6 +11,7 @@ import { EmbySection } from '@/features/settings/emby-section'
 import { JavDBAccountSection } from '@/features/settings/javdb-account-section'
 import { NetworkSection } from '@/features/settings/network-section'
 import { PanSection } from '@/features/settings/pan-section'
+import { PanSourceSection } from '@/features/settings/pan-source-section'
 import { PrivacySection } from '@/features/settings/privacy-section'
 import { SubscriptionSection } from '@/features/settings/subscription-section'
 import { ScrapingSection } from '@/features/settings/scraping-section'
@@ -40,6 +41,8 @@ function SettingsPage() {
           <AvdbAutoUpdateSection />
           <Separator />
           <EmbySection />
+          <Separator />
+          <PanSourceSection />
           <Separator />
           <PanSection />
           <Separator />

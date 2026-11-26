@@ -2,6 +2,7 @@ import { CloudIcon, LoaderCircleIcon, LogOutIcon, QrCodeIcon, RefreshCwIcon } fr
 
 import { isPanUnauthorized } from '@/api/client'
 import { useDisconnectPan, usePanAccount } from '@/api/pan'
+import { usePanSourceStatus } from '@/api/pan-source'
 import { InlineError } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -11,14 +12,19 @@ import { PanAccountInfo, PanStorageUsage } from './pan-account'
 import { SettingRow, SettingsSection } from './shared'
 
 export function PanSection() {
-  const account = usePanAccount()
+  // CloudDrive2 owns the 115 credentials, so the QR login has nothing to sign in.
+  const source = usePanSourceStatus()
+  const managedByCD2 = source.data?.effectiveProvider === 'cd2'
+  const account = usePanAccount(!managedByCD2)
   const disconnect = useDisconnectPan()
   const unauthorized = isPanUnauthorized(account.error)
   const connected = account.data?.connected === true && !unauthorized
   const profile = account.data?.account
 
   let description = '使用 115 手机客户端扫码登录'
-  if (account.isPending) {
+  if (managedByCD2) {
+    description = '当前数据源是 CloudDrive2，115 账号请在 CD2 中管理'
+  } else if (account.isPending) {
     description = '正在读取登录状态…'
   } else if (unauthorized) {
     description = '授权已失效，请重新扫码登录'
@@ -28,7 +34,7 @@ export function PanSection() {
     description = '已登录，正在读取账号信息…'
   }
 
-  const actions = (
+  const actions = managedByCD2 ? null : (
     <div className="flex shrink-0 items-center gap-2">
       {account.isError ? (
         <Tooltip>
