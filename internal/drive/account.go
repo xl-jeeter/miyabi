@@ -113,7 +113,7 @@ func (d *Drive) fetchAccount(ctx context.Context, state snapshot) (pan.Account, 
 
 func (d *Drive) Account(ctx context.Context) (AccountStatus, error) {
 	state := d.snapshot()
-	if state.tokens.AccessToken == "" {
+	if state.tokens.AccessToken == "" && !d.tokenless {
 		return AccountStatus{}, nil
 	}
 	account, err := d.verifyAccount(ctx, state)

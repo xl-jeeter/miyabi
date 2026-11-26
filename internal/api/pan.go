@@ -23,13 +23,15 @@ type panLoginURI struct {
 	ID string `uri:"id" binding:"required,uuid4"`
 }
 
+// Directory IDs are opaque: 115 uses numeric IDs while CloudDrive2 derives them
+// from paths, so the values are only length-checked here.
 type panFilesQuery struct {
-	DirectoryID string `form:"directory_id,default=0" binding:"number"`
+	DirectoryID string `form:"directory_id,default=0" binding:"max=1024"`
 	Page        int    `form:"page,default=1" binding:"min=1"`
 }
 
 type panDirectoryInput struct {
-	ID string `json:"id" binding:"required,number"`
+	ID string `json:"id" binding:"required,max=1024"`
 }
 
 func panAccountHandler(pan DriveManager) gin.HandlerFunc {

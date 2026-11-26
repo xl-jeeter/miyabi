@@ -38,6 +38,13 @@ type Client interface {
 	OpenMedia(context.Context, string, string, http.Header) (*http.Response, error)
 }
 
+// Tokenless is implemented by clients whose cloud credentials live outside
+// miyabi, such as CloudDrive2. The drive then skips the 115 access-token
+// requirement, which those clients never satisfy.
+type Tokenless interface {
+	Tokenless() bool
+}
+
 type mountRecord struct {
 	AccountID string `json:"account_id"`
 	domain.LibraryDirectory
@@ -71,6 +78,7 @@ type Drive struct {
 
 	mu                   sync.Mutex
 	commit               syncx.ContextLock
+	tokenless            bool
 	tokens               pan.Tokens
 	directory            mountRecord
 	authorizationVersion uint64
@@ -103,9 +111,11 @@ func NewWithClient(ctx context.Context, db *ent.Client, client Client) (*Drive, 
 	if err != nil {
 		return nil, err
 	}
+	tokenlessClient, tokenless := client.(Tokenless)
 	d := &Drive{
 		database:  db,
 		client:    client,
+		tokenless: tokenless && tokenlessClient.Tokenless(),
 		tokens:    tokens,
 		directory: directory,
 	}
@@ -136,7 +146,7 @@ func (d *Drive) snapshot() snapshot {
 
 func (d *Drive) credentials(expected snapshot) (snapshot, error) {
 	current := d.snapshot()
-	if current.credentialVersion != expected.credentialVersion || current.tokens.AccessToken == "" {
+	if current.credentialVersion != expected.credentialVersion || current.tokens.AccessToken == "" && !d.tokenless {
 		return snapshot{}, pan.ErrUnauthorized
 	}
 	return current, nil

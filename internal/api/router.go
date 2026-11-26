@@ -28,6 +28,7 @@ type Dependencies struct {
 	Artwork      ArtworkReader
 	Maintenance  MaintenanceManager
 	Network      NetworkManager
+	PanSource    PanSourceManager
 	Emby         EmbyManager
 	JavDBAccount JavDBAccountManager
 	Rankings     RankingsSource
@@ -87,6 +88,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	settingsAPI.GET("/network", networkHandler(deps.Network))
 	settingsAPI.PUT("/network", networkUpdateHandler(deps.Network))
 	settingsAPI.POST("/network/test", networkTestHandler(deps.Network))
+	settingsAPI.GET("/pan-source", panSourceHandler(deps.PanSource))
+	settingsAPI.PUT("/pan-source", panSourceUpdateHandler(deps.PanSource))
+	settingsAPI.POST("/pan-source/test", panSourceTestHandler(deps.PanSource))
 	settingsAPI.GET("/emby", embyConfigHandler(deps.Emby))
 	settingsAPI.PUT("/emby", embyUpdateHandler(deps.Emby))
 	settingsAPI.POST("/emby/test", embyTestHandler(deps.Emby))

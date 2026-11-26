@@ -18,7 +18,8 @@ func clearConfigEnvironment(t *testing.T) {
 		"MIYABI_PUBLIC_URL", "MIYABI_STRM_TOKEN",
 		"MIYABI_LOG_LEVEL", "MIYABI_ACCESS_PASSWORD", "MIYABI_JWT_SECRET", "MIYABI_TRUSTED_PROXIES",
 		"MIYABI_EMBY_ENABLED", "MIYABI_EMBY_SERVER_URL", "MIYABI_EMBY_API_KEY", "MIYABI_EMBY_MEDIA_PATH", "MIYABI_EMBY_SYNC_ACTORS",
-		"MIYABI_EMBY_URL",
+		"MIYABI_EMBY_URL", "MIYABI_PAN_PROVIDER", "MIYABI_CD2_ENDPOINT", "MIYABI_CD2_TOKEN",
+		"MIYABI_CD2_USERNAME", "MIYABI_CD2_PASSWORD", "MIYABI_CD2_ACCOUNT",
 	} {
 		// Restore the developer's environment when the test finishes.
 		t.Setenv(key, "")
@@ -43,6 +44,7 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				PublicURL:      "http://" + netx.OutboundIP() + ":8080",
 				LogLevel:       slog.LevelInfo,
 				EmbySyncActors: true,
+				PanProvider:    PanProvider115,
 			},
 		},
 		{
@@ -74,6 +76,7 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				EmbyAPIKey:     "my-emby-key",
 				EmbyMediaPath:  "/media",
 				EmbySyncActors: false,
+				PanProvider:    PanProvider115,
 			},
 		},
 		{
@@ -86,6 +89,7 @@ func TestLoadDefaultsAndEnvironment(t *testing.T) {
 				PublicURL:      "http://" + netx.OutboundIP() + ":8080",
 				LogLevel:       slog.LevelInfo,
 				EmbySyncActors: true,
+				PanProvider:    PanProvider115,
 			},
 		},
 	} {
@@ -164,5 +168,47 @@ func TestLoadIgnoresLegacyConfigFile(t *testing.T) {
 	}
 	if cfg, err := Load(); err != nil || cfg.Listen != ":8080" || cfg.DataDir != "./data" {
 		t.Fatalf("local config file affected environment-only startup: %+v, %v", cfg, err)
+	}
+}
+
+func TestLoadValidatesPanProvider(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{name: "unknown provider", env: map[string]string{"MIYABI_PAN_PROVIDER": "clouddrive"}, want: "MIYABI_PAN_PROVIDER"},
+		{name: "cd2 without endpoint", env: map[string]string{"MIYABI_PAN_PROVIDER": "cd2", "MIYABI_CD2_TOKEN": "token"}, want: "MIYABI_CD2_ENDPOINT"},
+		{name: "cd2 without credentials", env: map[string]string{"MIYABI_PAN_PROVIDER": "cd2", "MIYABI_CD2_ENDPOINT": "127.0.0.1:19798"}, want: "MIYABI_CD2_TOKEN"},
+		{name: "cd2 with user only", env: map[string]string{
+			"MIYABI_PAN_PROVIDER": "cd2", "MIYABI_CD2_ENDPOINT": "127.0.0.1:19798", "MIYABI_CD2_USERNAME": "miyabi",
+		}, want: "MIYABI_CD2_TOKEN"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clearConfigEnvironment(t)
+			for key, value := range test.env {
+				t.Setenv(key, value)
+			}
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected an error naming %s, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsCD2WithTokenOrCredentials(t *testing.T) {
+	for _, env := range []map[string]string{
+		{"MIYABI_CD2_ENDPOINT": "127.0.0.1:19798", "MIYABI_CD2_TOKEN": " token "},
+		{"MIYABI_CD2_ENDPOINT": "127.0.0.1:19798", "MIYABI_CD2_USERNAME": "miyabi", "MIYABI_CD2_PASSWORD": "secret"},
+	} {
+		clearConfigEnvironment(t)
+		t.Setenv("MIYABI_PAN_PROVIDER", "cd2")
+		for key, value := range env {
+			t.Setenv(key, value)
+		}
+		cfg, err := Load()
+		if err != nil || cfg.PanProvider != PanProviderCD2 || cfg.CD2.Endpoint != "127.0.0.1:19798" {
+			t.Fatalf("config = %+v, error = %v", cfg, err)
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/ppxb/miyabi/internal/database"
 	"github.com/ppxb/miyabi/internal/domain"
 	"github.com/ppxb/miyabi/internal/drive"
+	"github.com/ppxb/miyabi/internal/drive/cd2"
 	"github.com/ppxb/miyabi/internal/emby"
 	"github.com/ppxb/miyabi/internal/export"
 	"github.com/ppxb/miyabi/internal/gfriends"
@@ -34,6 +35,7 @@ import (
 	"github.com/ppxb/miyabi/internal/network"
 	"github.com/ppxb/miyabi/internal/netx"
 	"github.com/ppxb/miyabi/internal/offline"
+	"github.com/ppxb/miyabi/internal/pansource"
 	"github.com/ppxb/miyabi/internal/strm"
 	"github.com/ppxb/miyabi/internal/subtitle"
 	"github.com/ppxb/miyabi/internal/tasks"
@@ -79,9 +81,16 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("initialize network service: %w", err)
 	}
 
+	// The settings page stores the pan source in the database, which overrides
+	// the environment. Resolve it before the drive service is assembled.
+	panSource := pansource.New(ctx, store.Client, logger, pansource.Settings{
+		Provider: cfg.PanProvider,
+		CD2:      pansource.CD2(cfg.CD2),
+	})
+
 	taskRegistry := tasks.NewRegistry()
 	taskSvc := tasks.NewService(store.Client, taskRegistry)
-	driveSvc, err := drive.New(ctx, store.Client)
+	driveSvc, err := newDrive(ctx, panSource.Startup(), store)
 	if err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize drive service: %w", err)
@@ -225,6 +234,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Artwork:            scrapeSvc,
 		Maintenance:        maintenanceSvc,
 		Network:            networkSvc,
+		PanSource:          panSource,
 		Emby:               embySvc,
 		JavDBAccount:       catalogueSvc,
 		Rankings:           api.NewRankingsSource(catalogueSvc, avdbClient, logger),
@@ -259,6 +269,19 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		resources:  resourceStore,
 		autoUpdate: resourceAutoUpdate,
 	}, nil
+}
+
+// newDrive assembles the drive service with the resolved pan backend. The 115
+// path stays the default so existing deployments are unaffected.
+func newDrive(ctx context.Context, source pansource.Settings, store *database.Store) (*drive.Drive, error) {
+	if source.Provider != pansource.ProviderCD2 {
+		return drive.New(ctx, store.Client)
+	}
+	client, err := cd2.New(source.CD2Config())
+	if err != nil {
+		return nil, err
+	}
+	return drive.NewWithClient(ctx, store.Client, client)
 }
 
 // Run starts the task pools, the periodic workers and the HTTP server, then

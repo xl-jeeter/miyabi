@@ -21,7 +21,7 @@ type STRMRelay interface {
 func strmStreamHandler(relay STRMRelay, token string, gate AccessGate) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uri, ok := bindURI[struct {
-			FileID string `uri:"fileID" binding:"required,max=128"`
+			FileID string `uri:"fileID" binding:"required,max=1024"`
 		}](c)
 		if !ok {
 			return
